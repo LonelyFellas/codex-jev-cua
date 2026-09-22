@@ -1,6 +1,6 @@
 # jev-codex-cua
 
-> **v0.1.0 实验原型**：用于保存当前实现和联调证据，不代表达到官方 Codex Computer Use 的可靠性。已验证部分计算器任务；多步任务、浏览器控件和菜单状态仍有兼容性缺口。不要将单元测试通过视为任意应用可用或生产验收通过。
+> **v0.2.0 实验原型**：用于保存当前实现和联调证据，不代表达到官方 Codex Computer Use 的可靠性。已验证部分计算器任务；多步任务、浏览器控件和菜单状态仍有兼容性缺口。不要将单元测试通过视为任意应用可用或生产验收通过。
 
 **一个 pi 包，两种模式，共用同一套 Codex/Sky 桥接。** 默认 `native`，不需要 TypeSafe Key；显式选择 `jev` 后才使用参考 [Sac-Y/Jev-cu](https://github.com/Sac-Y/Jev-cu) 的文字决策循环。
 
@@ -23,17 +23,21 @@ npm run build
 npm test
 # 可选，需用户明确允许真实计算器操作；官方批准不会被模拟：
 # npm run accept:handoff -- --live
+# 可选，真实 Sky 只读验证应用范围（可能打开/聚焦 Calculator，保留官方授权）：
+# npm run accept:app-access -- --live
 ```
 
 测试使用模拟 driver 和 HTTP 响应，不访问外网、不控制真实应用。原生引擎实验留在独立 `native-mvp` worktree，不属于本版。
 
-## npm 安装（发布后）
+## 自动发布与 npm 安装
+
+推送已合入 `main` 的 `vX.Y.Z` tag 后，GitHub Actions 检查版本一致性、运行发布门禁并通过 npm OIDC 发布；普通 PR / main 推送只验证。首次须绑定 npm Trusted Publisher，配置与操作见 [npm 自动发布](docs/npm-release.md)。
 
 目标分发形式遵循 [pi 官方包规范](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md)：
 
 ```bash
 pi install npm:jev-codex-cua
-# 固定版本：pi install npm:jev-codex-cua@0.1.0
+# 固定版本：pi install npm:jev-codex-cua@0.2.0
 ```
 
 以 npm registry 实际可查询的版本为准。包包含源码与预构建产物，具备 prepack 构建及隔离安装检查；本项目采用 MIT，引用部分保留 ISC/MIT 声明，见 [LICENSE](LICENSE) 与 [第三方授权](THIRD_PARTY_LICENSES.md)。发布门禁、版本固定和配置迁移见 [npm 分发](docs/npm-release.md)。npm 安装后无需本地编译；密钥和授权配置应放在包外，通过 `JEV_CUA_ENV_FILE` 指定。
@@ -50,7 +54,7 @@ pi install /absolute/path/to/jev-orchestration
 这是本地路径安装，不复制代码。然后在 pi 执行 `/reload` 或打开新会话。不要运行下面的 Codex skill 安装命令来代替 pi 安装。
 
 - `/cua-mode`：查询模式；`/cua-mode native` 或 `/cua-mode jev` 显式切换，不执行桌面动作。
-- `cua_status`：查看模式、配置及原生接管剩余预算。旧 `jev_cua_status` 和 `/jev-cua-status` 保留兼容。
+- `cua_status`：查看模式、插件应用范围（`appAccess`）、配置及原生接管剩余预算；不代表系统权限已授予。旧 `jev_cua_status` 和 `/jev-cua-status` 保留兼容。
 - `cua_get_app_state`：读取原生窗口/菜单状态和可用截图；其他 `cua_*` 工具由主 Agent 直接操作，不调用 Jev。
 - `jev_cua_observe`：兼容的纯文本观察入口，不调用 Jev；原生动作前仍需 `cua_get_app_state` 的 stateId。
 - `jev_cua_run`：**只在 jev 模式启用**，默认执行已授权短任务，`dryRun:true` 为预览。会把文字候选及上下文发送到 TypeSafe，可能计费。原生模式下即使直接调用这个工具也会拒绝，不能隐式启动 Jev。
@@ -79,7 +83,7 @@ Sky 仍可能发出 **“官方 Computer Use 授权”** 弹窗，由用户决�
 
 Jev 对目标不确定时返回 needs_planner，交回主 Agent。仅此结果在当前 turn 内开放**原应用、剩余预算范围内**的原生动作；主 Agent 先读取新状态，再作独立判断，不自动重放 Jev 动作。原生接管消耗剩余预算，错误、agent 结束或新 Jev 任务会清理它。`confirm`/取消/未知结果不启用这个接管通道。
 
-Native 的判断与后果性操作授权由主 Agent 负责，不使用 Jev 的置信度/关键词分类；两者都经过应用白名单、官方授权和状态检查。用户显式切模式不代表可以绕过拒绝或扩大任务授权。
+Native 的判断与后果性操作授权由主 Agent 负责，不使用 Jev 的置信度/关键词分类；两者都经过插件应用范围、官方授权和状态检查。用户显式切模式不代表可以绕过拒绝或扩大任务授权。
 
 ### pi 配置
 
@@ -87,12 +91,37 @@ Native 的判断与后果性操作授权由主 Agent 负责，不使用 Jev 的�
 
 ```dotenv
 JEV_CUA_MODE=native
+JEV_CUA_APP_ACCESS=allowlist
 JEV_CUA_ALLOWED_APPS=Calculator
 # 只有 jev 模式需要：
 # TYPESAFE_API_KEY=your-key
 ```
 
 文件必须属于当前用户，权限为 `600`，已被 Git 忽略。也可使用进程环境的 `TYPESAFE_API_KEY`；使用 `JEV_CUA_ENV_FILE` 指向其他私有文件。基础白名单遵循环境变量优先于文件，默认允许 Calculator。新增应用也可通过下面的专用 skill 单条追加，不必编辑含密钥的文件。普通桌面任务不得自行扩展名单。
+
+### 可选：允许插件访问所有应用
+
+只有用户明确选择时，才将私有配置中的 `JEV_CUA_APP_ACCESS` 设为 `all`：
+
+```dotenv
+JEV_CUA_APP_ACCESS=all
+```
+
+- 缺省为 `allowlist`，仅允许基础名单和 `.apps.json` 中的应用；`all` 适用于 native、兼容文本观察和 Jev，不必逐个追加应用。不接受 `*`、`true` 等代替值，配置错误时拒绝执行。
+- 切回 `JEV_CUA_APP_ACCESS=allowlist` 即恢复原名单；启用 `all` 不删除或重写已有授权文件。环境变量优先于文件，撤销时也要检查进程环境是否仍设置了 `all`。
+- 配置每次工具调用重读：私有文件改动在下一次调用生效；进程环境改动需要重启 pi。首次更新代码需 `/reload`。配置变更不主动中断正在执行的 Jev 循环，需中止时请正常取消任务。
+- 动作仍指定一个具体应用名、bundle ID 或 `.app` 路径，不能传通配符。应用范围不等于任务授权，普通桌面任务或网页内容不能让模型自行启用 `all`。
+- `cua_list_apps` 保持现有的应用身份发现能力，名单模式也可使用；列出应用不代表已获得读取其窗口或执行动作的权限。
+
+**三个独立层次：**
+
+| 层次 | 本插件行为 |
+|---|---|
+| macOS 权限 | 由实际控制进程申请辅助功能、屏幕录制等权限；当前复用官方 Sky 进程链。Apple Events 可能还需要按目标应用授权。本开关不授予这些权限。 |
+| 插件应用范围 | `allowlist/all` 决定哪些具体应用能通过插件检查；不修改官方授权。 |
+| 操作确认 | 已授权的普通读取、点击、导航不额外逐次确认。native 仍由主 Agent 获取后果性操作的具体授权；Jev 的敏感动作门禁保留。全应用访问不授权任意发送、付款或删除。 |
+
+当前检查到的 Sky 工具目录未公开全应用授权或关闭官方确认的接口，不能保证“首次系统授权后所有应用永久免确认”。状态中的 `officialApproval=runtime-controlled`、`systemPermissions=not-checked` 明示此边界，`runtimeAvailable` 仅表示运行时路径可用。密码、安全提示、受保护界面及官方拒绝不能绕过。接口核查记录见 [应用访问需求](docs/app-access/requirements.md)。
 
 ### 只添加应用的 Skill
 
@@ -110,7 +139,7 @@ JEV_CUA_ALLOWED_APPS=Calculator
 npm run allow-app -- 'Wechat Devtools'
 ```
 
-新授权写到独立的 `.env.local.apps.json`；配置了 `JEV_CUA_ENV_FILE` 时，路径为该环境文件名加 `.apps.json`。有效名单是原基础名单与该授权文件的并集；即使环境变量覆盖基础名单，明确的附加授权仍生效。两份文件不会互相覆盖。授权文件权限为 600，重复添加不改文件；拒绝批量、通配符、删除/替换模式、符号链接和异常配置。更新使用独占锁及原子替换；遇到锁冲突停止，不擅自删除锁。
+新授权写到独立的 `.env.local.apps.json`；配置了 `JEV_CUA_ENV_FILE` 时，路径为该环境文件名加 `.apps.json`。在 `allowlist` 模式下，有效名单是原基础名单与该授权文件的并集；即使环境变量覆盖基础名单，明确的附加授权仍生效。两份文件不会互相覆盖。授权文件权限为 600，重复添加不改文件；拒绝批量、通配符、删除/替换模式、符号链接和异常配置。更新使用独占锁及原子替换；遇到锁冲突停止，不擅自删除锁。
 
 运行时每次调用重读名单，完成首次代码 `/reload` 后，追加应用无需再次重载。本 skill 不提供撤销权限功能，撤销须另行明确处理。默认授权文件同样被 Git 忽略且不打包发布。
 

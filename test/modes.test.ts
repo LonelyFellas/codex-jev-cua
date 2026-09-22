@@ -194,6 +194,102 @@ test("official approval is preserved in native mode; headless/declined approval 
   }
 });
 
+test("all-app access covers native and text reads, preserves state checks, and revokes on the next call", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("Native must not contact TypeSafe"); });
+  const config: PiConfig = { appAccess: "all", allowedApps: ["Calculator"], envFile: "/unused" };
+  const h = setup({ config });
+  const status = (await h.call("cua_status")).details as Record<string, unknown>;
+  assert.equal(status.appAccess, "all");
+  assert.deepEqual(status.allowedApps, ["Calculator"]);
+  assert.equal(status.officialApproval, "runtime-controlled");
+  assert.equal(status.systemPermissions, "not-checked");
+  assert.equal(h.created, 0);
+  for (const app of ["Mail", "com.apple.TextEdit", "/Applications/Music.app"]) {
+    await h.call("jev_cua_observe", { appName: app });
+    const observed = await h.call("cua_get_app_state", { app });
+    await h.call("cua_click", { app, stateId: stateId(observed), element_index: 1 });
+    assert.equal(h.calls.at(-1)?.args.app, app);
+    await assert.rejects(h.call("cua_click", { app, stateId: stateId(observed), element_index: 1 }), /stale/);
+  }
+  const observed = await h.call("cua_get_app_state", { app: "Mail" });
+  h.setConfig({ ...config, appAccess: "allowlist" });
+  const before = h.calls.length;
+  await assert.rejects(h.call("cua_click", { app: "Mail", stateId: stateId(observed), element_index: 1 }), /not allowed/);
+  await assert.rejects(h.call("cua_get_app_state", { app: "Mail" }), /not allowed/);
+  await assert.rejects(h.call("jev_cua_observe", { appName: "Mail" }), /not allowed/);
+  assert.equal(h.calls.length, before);
+  await h.call("cua_get_app_state", { app: "Calculator" });
+  assert.equal(h.approvals, 0, "All-app access must not add per-action plugin prompts.");
+  assert.equal(((await h.call("cua_status")).details as Record<string, unknown>).appAccess, "allowlist");
+});
+
+test("all-app access still requires one concrete application and does not accept tool-argument grants", async () => {
+  const h = setup({ config: { appAccess: "all", allowedApps: [], envFile: "/unused" } });
+  for (const app of ["*", "all", "全部应用", "Mail,Music", "", "Mail\n", " Mail "]) {
+    await assert.rejects(h.call("cua_get_app_state", { app }));
+    await assert.rejects(h.call("jev_cua_observe", { appName: app }));
+  }
+  assert.equal(h.created, 0);
+  const restricted = setup();
+  await assert.rejects(restricted.call("cua_get_app_state", { app: "Mail", appAccess: "all" }), /not allowed/);
+  assert.equal(restricted.created, 0);
+  const legacyName = "/Applications/Editor [Beta].app";
+  for (const appAccess of ["allowlist", "all"] as const) {
+    restricted.setConfig({ appAccess, allowedApps: [legacyName], envFile: "/unused" });
+    await restricted.call("cua_get_app_state", { app: legacyName });
+    assert.equal(restricted.calls.at(-1)?.args.app, legacyName, "Keep existing exact allowlist matching compatible.");
+  }
+});
+
+test("all-app Jev runs keep sensitive-action gates and same-app handoff budgets", async (t) => {
+  let confidence = 1;
+  t.mock.method(globalThis, "fetch", async () => Response.json({ answers: {
+    target: { choice: "i1", confidence }, action: { choice: "click_element" }, risk: { noul: 0 }, done: { noul: 0 },
+  } }));
+  const config: PiConfig = { apiKey: "synthetic", mode: "jev", appAccess: "all", allowedApps: ["Calculator"], envFile: "/unused" };
+  const h = setup({ config });
+  const args = { appName: "Mail", goal: "Inspect", maxSteps: 1 };
+  const preview = await h.call("jev_cua_run", { ...args, dryRun: true });
+  assert.equal((preview.details as { status: string }).status, "dry_run");
+  for (const label of ["Send", "Pay", "Delete", "Password"]) {
+    h.setResult({ content: [{ type: "text", text: `0 standard window Mail\n1 button ${label}` }] });
+    const before = h.calls.length;
+    const result = await h.call("jev_cua_run", args);
+    assert.equal((result.details as { status: string }).status, "confirm");
+    assert.deepEqual(h.calls.slice(before).map((c) => c.method), ["get_app_state"]);
+    assert.ok(!h.active.includes("cua_click"));
+  }
+  h.setResult({ content: [{ type: "text", text: AX }] });
+  confidence = 0.35;
+  const result = await h.call("jev_cua_run", args);
+  assert.equal((result.details as { status: string }).status, "needs_planner");
+  const other = await h.call("cua_get_app_state", { app: "Music" });
+  await assert.rejects(h.call("cua_click", { app: "Music", stateId: stateId(other), element_index: 1 }), /handoff/);
+  const observed = await h.call("cua_get_app_state", { app: "Mail" });
+  await h.call("cua_click", { app: "Mail", stateId: stateId(observed), element_index: 1 });
+  await assert.rejects(h.call("cua_click", { app: "Mail", stateId: stateId(observed), element_index: 1 }), /budget|handoff/);
+  h.setConfig({ ...config, appAccess: "allowlist" });
+  const before = h.calls.length;
+  await assert.rejects(h.call("jev_cua_run", args), /not allowed/);
+  assert.equal(h.calls.length, before);
+  assert.equal(h.approvals, 0);
+});
+
+test("all-app access never fakes official approval in either mode", async () => {
+  for (const mode of ["native", "jev"] as const) {
+    for (const options of [{ hasUI: true, approved: false }, { hasUI: false, approved: true }]) {
+      const h = setup({ ...options, nativeApproval: true,
+        config: { mode, apiKey: "synthetic", appAccess: "all", allowedApps: [], envFile: "/unused" } });
+      await assert.rejects(mode === "native"
+        ? h.call("cua_get_app_state", { app: "Mail" })
+        : h.call("jev_cua_run", { appName: "Mail", goal: "Inspect", maxSteps: 1 }), /declined|failed/);
+      assert.deepEqual(h.calls.map((c) => c.method), ["get_app_state"]);
+      assert.equal(h.closed, 1);
+      assert.equal(h.approvals, options.hasUI ? 1 : 0);
+    }
+  }
+});
+
 test("busy native calls prevent both mode switching and overlapping operations", async () => {
   const h = setup({ config: { apiKey: "synthetic", allowedApps: ["Calculator"], envFile: "/unused" } });
   let release!: () => void;

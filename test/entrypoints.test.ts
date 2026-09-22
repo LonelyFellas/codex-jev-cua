@@ -30,6 +30,12 @@ test("controlled real-desktop handoff test refuses to run without explicit --liv
   assert.match(result.stderr, /Pass --live/);
   assert.equal(result.stdout, "");
 });
+test("read-only app-access acceptance refuses to run without explicit --live", () => {
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", join(root, "scripts/accept-app-access.ts")], { encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Pass --live/);
+  assert.equal(result.stdout, "");
+});
 test("online evaluation requires explicit --live opt-in", () => {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", join(root, "src/eval.ts")], {
     encoding: "utf8", env: { ...process.env, TYPESAFE_API_KEY: "not-a-real-key" },

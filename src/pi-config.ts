@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { appGrantsPath, readAppGrants } from "./app-grants.ts";
 
 export type CuaMode = "native" | "jev";
-export interface PiConfig { apiKey?: string; allowedApps: string[]; envFile: string; mode?: CuaMode }
+export type AppAccess = "allowlist" | "all";
+export interface PiConfig { apiKey?: string; allowedApps: string[]; envFile: string; mode?: CuaMode; appAccess?: AppAccess }
 export function loadPiConfig(env: NodeJS.ProcessEnv = process.env, defaultFile = fileURLToPath(new URL("../.env.local", import.meta.url))): PiConfig {
   const envFile = env.JEV_CUA_ENV_FILE ?? defaultFile;
   let local: Record<string, string | undefined> = {};
@@ -25,6 +26,8 @@ export function loadPiConfig(env: NodeJS.ProcessEnv = process.env, defaultFile =
   ])];
   const mode = env.JEV_CUA_MODE ?? local.JEV_CUA_MODE;
   if (mode !== undefined && mode !== "native" && mode !== "jev") throw new Error("JEV_CUA_MODE must be native or jev; auto routing is not supported.");
+  const appAccess = env.JEV_CUA_APP_ACCESS ?? local.JEV_CUA_APP_ACCESS ?? "allowlist";
+  if (appAccess !== "allowlist" && appAccess !== "all") throw new Error("JEV_CUA_APP_ACCESS must be allowlist or all; only the user may enable all-app access.");
   // Never copy secrets into process.env, tool results or the Sky child process.
-  return { apiKey, allowedApps, envFile, ...(mode ? { mode } : {}) };
+  return { apiKey, allowedApps, envFile, appAccess, ...(mode ? { mode } : {}) };
 }
