@@ -10,7 +10,7 @@
   "type": "module",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "src", "skill", "skills", "fixtures", "docs", "README.md", "LICENSE", "NOTICE.md", "THIRD_PARTY_LICENSES.md", "!**/*.access.json*"],
+  "files": ["dist", "src", "skill", "skills", "fixtures", "docs", "README.md", "README.zh-CN.md", "LICENSE", "NOTICE.md", "THIRD_PARTY_LICENSES.md", "!**/*.access.json*"],
   "keywords": ["pi-package", "computer-use", "jev", "codex"],
   "pi": { "extensions": ["./src/pi-extension.ts"], "skills": ["./skills"] },
   "scripts": {

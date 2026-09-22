@@ -25,7 +25,7 @@ try {
   assert.ok(existsSync(tarball));
   const entries = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" }).trim().split("\n");
   assert.ok(entries.every((entry) => !/(^|\/)(\.env[^/]*|runs|node_modules|test)(\/|$)/.test(entry)), "Package must exclude private configuration, traces, dependencies and tests.");
-  for (const required of ["src/pi-extension.ts", "dist/index.js", "dist/index.d.ts", "skills/jev-codex-cua/SKILL.md", "skills/jev-cua-add-app/SKILL.md", "skills/jev-cua-access/SKILL.md", "src/app-access.ts", "src/app-access-grants.ts", "dist/app-access.js", "dist/app-access-grants.js", "src/add-app.ts", "src/sky/LICENSE.pi-codex-cua", "LICENSE", "NOTICE.md", "THIRD_PARTY_LICENSES.md", "docs/action-trace.md"]) {
+  for (const required of ["README.md", "README.zh-CN.md", "src/pi-extension.ts", "dist/index.js", "dist/index.d.ts", "skills/jev-codex-cua/SKILL.md", "skills/jev-cua-add-app/SKILL.md", "skills/jev-cua-access/SKILL.md", "src/app-access.ts", "src/app-access-grants.ts", "dist/app-access.js", "dist/app-access-grants.js", "src/add-app.ts", "src/sky/LICENSE.pi-codex-cua", "LICENSE", "NOTICE.md", "THIRD_PARTY_LICENSES.md", "docs/action-trace.md"]) {
     assert.ok(entries.includes(`package/${required}`), `Missing packed file: ${required}`);
   }
   const consumer = join(temporary, "consumer");
