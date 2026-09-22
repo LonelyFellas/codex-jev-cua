@@ -12,7 +12,7 @@
 - 只有官方仓库 `LonelyFellas/codex-jev-cua` 的 tag push 能进入发布 job。
 - 发布 job 在 GitHub 托管的 Ubuntu runner 运行，Node 24，使用 npm Trusted Publishing / OIDC 和 provenance，不配置长期 npm token。
 - 验证 job 只有 contents:read；发布 job 额外获得 id-token:write。不启用真实桌面或 TypeSafe 测试。
-- `npm publish` 正常执行 prepublishOnly 门禁，不跳过脚本。发布后查询 registry 验证版本；查询可重试，发布本身不自动重试。
+- `npm publish` 正常执行 prepublishOnly 门禁，不跳过脚本。发布后查询 registry 验证版本，等待预算最多 10 分钟；查询可重试，发布本身不自动重试。npm 可能先接收包，再异步处理后才允许查询。
 
 ## 首次绑定 Trusted Publisher
 
@@ -55,6 +55,8 @@ git push origin v0.2.0
 ```bash
 npm view jev-codex-cua@0.2.0 version dist.integrity dist.attestations --json
 ```
+
+首次 `v0.2.0` 的 OIDC 发布和 provenance 生成成功，但当时只有 60 秒的查询窗口，因 npm 异步处理而超时。之后已从 registry 确认 `0.2.0`、源码提交 `530843fede500ba0b97e02ee05a99dc2605d2c05` 和 provenance；未重复发布。原运行保留查询失败记录，后续版本使用延长后的等待预算。
 
 不覆写已发布的 npm 版本，不强推/移动版本 tag。若发布失败，先确认失败发生在发布前还是发布后；若 registry 已存在该版本，不再次 publish。发布前的暂时故障可以在修复外部配置后重跑原 workflow；代码变更应提交并使用新版本/tag。
 
