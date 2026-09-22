@@ -1,6 +1,6 @@
 {
   "name": "jev-codex-cua",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "description": "Experimental pi desktop tools: native Codex Sky or optional Jev decisions",
   "repository": { "type": "git", "url": "git+https://github.com/LonelyFellas/codex-jev-cua.git" },
@@ -19,6 +19,7 @@
     "prepublishOnly": "npm run check && npm test && npm run test:package",
     "test:package": "node --experimental-strip-types scripts/check-package.ts",
     "accept:handoff": "node --experimental-strip-types scripts/accept-handoff.ts",
+    "accept:app-access": "node --experimental-strip-types scripts/accept-app-access.ts",
     "allow-app": "node --experimental-strip-types src/add-app.ts",
     "check": "tsc --noEmit && tsc -p tsconfig.test.json && tsc -p tsconfig.tools.json",
     "test": "node --test --experimental-strip-types test/*.test.ts",

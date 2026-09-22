@@ -1,0 +1,71 @@
+name: Validate and publish npm
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
+      - run: npm run test:package
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag' && github.repository == 'LonelyFellas/codex-jev-cua'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: Check tag, package version and main ancestry
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          node --experimental-strip-types scripts/check-release.ts
+      - run: npm ci --ignore-scripts
+      - name: Publish with npm OIDC (includes prepublishOnly gates)
+        run: npm publish --access public --provenance --registry=https://registry.npmjs.org/
+      - name: Confirm registry version
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          for attempt in 1 2 3 4 5 6; do
+            published="$(npm view "jev-codex-cua@$version" version --registry=https://registry.npmjs.org/ 2>/dev/null || true)"
+            if [ "$published" = "$version" ]; then
+              echo "Published jev-codex-cua@$version" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Publication returned but registry verification failed; inspect registry before retrying."
+          exit 1
