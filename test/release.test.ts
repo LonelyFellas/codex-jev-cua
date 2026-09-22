@@ -10,7 +10,7 @@ const script = fileURLToPath(new URL("../scripts/check-release.ts", import.meta.
 test("release guard accepts matching stable tags on main and rejects mismatches or unmerged sources", async () => {
   const directory = await mkdtemp(join(tmpdir(), "jev-release-"));
   const manifest = { name: "jev-codex-cua", version: "0.2.0",
-    repository: { url: "git+https://github.com/LonelyFellas/codex-jev-cua.git" },
+    repository: { url: "git+https://github.com/LonelyFellas/jev-codex-cua.git" },
     publishConfig: { registry: "https://registry.npmjs.org/", access: "public" } };
   const lock = { version: "0.2.0", packages: { "": { version: "0.2.0" } } };
   const git = (...args: string[]) => execFileSync("git", args, { cwd: directory, stdio: "pipe" });
@@ -24,6 +24,10 @@ test("release guard accepts matching stable tags on main and rejects mismatches 
     git("-c", "user.name=Release Test", "-c", "user.email=release-test@example.invalid", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture");
     git("update-ref", "refs/remotes/origin/main", "HEAD");
     assert.equal(run().status, 0);
+    await writeFile(join(directory, "package.json"), JSON.stringify({ ...manifest,
+      repository: { url: "git+https://github.com/LonelyFellas/codex-jev-cua.git" } }));
+    assert.notEqual(run().status, 0, "Old repository metadata must not pass the publisher guard.");
+    await writeFile(join(directory, "package.json"), JSON.stringify(manifest));
     for (const [tag, type] of [["v0.2.0", "branch"], ["v0.2.1", "tag"], ["v0.2.0-beta.1", "tag"], ["v00.2.0", "tag"], ["v0.2.0;echo unsafe", "tag"]]) {
       assert.notEqual(run(tag, type).status, 0);
     }
