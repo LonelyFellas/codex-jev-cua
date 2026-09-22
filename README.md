@@ -2,10 +2,12 @@
 
 > **v0.1.0 实验原型**：用于保存当前实现和联调证据，不代表达到官方 Codex Computer Use 的可靠性。已验证部分计算器任务；多步任务、浏览器控件和菜单状态仍有兼容性缺口。不要将单元测试通过视为任意应用可用或生产验收通过。
 
-参考 [Sac-Y/Jev-cu](https://github.com/Sac-Y/Jev-cu) 的 TypeScript 实现：主 agent 规划，Jev（TypeSafe System One）根据界面文字选择动作，Codex Computer Use 读取与执行，本地策略决定是否放行。
+**一个 pi 包，两种模式，共用同一套 Codex/Sky 桥接。** 默认 `native`，不需要 TypeSafe Key；显式选择 `jev` 后才使用参考 [Sac-Y/Jev-cu](https://github.com/Sac-Y/Jev-cu) 的文字决策循环。
 
 ```text
-目标/计划 → 全量 AX → 文字候选 → Jev 四问 → 策略检查 → Codex 执行 → 再观测/验证
+native（默认）：pi 主 Agent → cua_* 原生工具 → Codex/Sky
+jev（可选）：   pi 主 Agent → Jev 决策/策略 → 同一个 Codex/Sky
+                                     └ 不确定时交回主 Agent，不自动重放
 ```
 
 不依赖自研原生引擎。优先支持 **pi 插件**，通过复用 pi-codex-cua 的 MIT 桥接代码连接已安装的 Codex/Sky；不需要切换到 Codex 会话或使用 `cua_repl`。原 Codex driver 仍可用于独立脚本。来源及授权情况见 [NOTICE.md](NOTICE.md)。
@@ -19,11 +21,24 @@ npm ci
 npm run check
 npm run build
 npm test
+# 可选，需用户明确允许真实计算器操作；官方批准不会被模拟：
+# npm run accept:handoff -- --live
 ```
 
 测试使用模拟 driver 和 HTTP 响应，不访问外网、不控制真实应用。原生引擎实验留在独立 `native-mvp` worktree，不属于本版。
 
-## 在 pi 中安装使用（推荐）
+## npm 安装（发布后）
+
+目标分发形式遵循 [pi 官方包规范](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md)：
+
+```bash
+pi install npm:jev-codex-cua
+# 固定版本：pi install npm:jev-codex-cua@0.1.0
+```
+
+以 npm registry 实际可查询的版本为准。包包含源码与预构建产物，具备 prepack 构建及隔离安装检查；本项目采用 MIT，引用部分保留 ISC/MIT 声明，见 [LICENSE](LICENSE) 与 [第三方授权](THIRD_PARTY_LICENSES.md)。发布门禁、版本固定和配置迁移见 [npm 分发](docs/npm-release.md)。npm 安装后无需本地编译；密钥和授权配置应放在包外，通过 `JEV_CUA_ENV_FILE` 指定。
+
+## 在 pi 中本地安装使用
 
 ```bash
 cd /absolute/path/to/jev-orchestration
@@ -34,9 +49,11 @@ pi install /absolute/path/to/jev-orchestration
 
 这是本地路径安装，不复制代码。然后在 pi 执行 `/reload` 或打开新会话。不要运行下面的 Codex skill 安装命令来代替 pi 安装。
 
-- `/jev-cua-status` 或工具 `jev_cua_status`：检查配置，不联网，不读取桌面。
-- `jev_cua_observe`：读取允许应用的 AX，不调用 Jev，不额外弹插件确认框。
-- `jev_cua_run`：默认执行用户明确要求的任务；`dryRun: true` 才是预览。会把文字候选及上下文发送到 TypeSafe，可能计费，不发送截图。普通运行不反复确认；只有显式 `fullTrace: true` 才额外确认敏感文本的本地持久化。
+- `/cua-mode`：查询模式；`/cua-mode native` 或 `/cua-mode jev` 显式切换，不执行桌面动作。
+- `cua_status`：查看模式、配置及原生接管剩余预算。旧 `jev_cua_status` 和 `/jev-cua-status` 保留兼容。
+- `cua_get_app_state`：读取原生窗口/菜单状态和可用截图；其他 `cua_*` 工具由主 Agent 直接操作，不调用 Jev。
+- `jev_cua_observe`：兼容的纯文本观察入口，不调用 Jev；原生动作前仍需 `cua_get_app_state` 的 stateId。
+- `jev_cua_run`：**只在 jev 模式启用**，默认执行已授权短任务，`dryRun:true` 为预览。会把文字候选及上下文发送到 TypeSafe，可能计费。原生模式下即使直接调用这个工具也会拒绝，不能隐式启动 Jev。
 - `/skill:jev-codex-cua`：加载 pi 使用流程。
 
 可在 pi 中说：
@@ -47,15 +64,32 @@ pi install /absolute/path/to/jev-orchestration
 
 Sky 仍可能发出 **“官方 Computer Use 授权”** 弹窗，由用户决定；插件不伪造批准或绕过它。等待官方确认时暂停网络期限，Esc 仍可取消。无 UI 时若官方请求授权就拒绝，而不是自动接受；若官方无需新授权，普通 observe/run 无需插件弹窗。完整轨迹仍须交互确认。
 
-Jev 对目标不确定时，pi 返回 `needs_planner`，附原目标、上下文、候选、操作历史和剩余预算。由主 Agent 核对是否已完成或细化下一子任务，不再让用户处理内部置信度分数。这不是后台自动重试或直接动作旁路；后续依然经过风险门槛与新状态校验，预算不得重置或扩大。
+### 模式与原生操作
+
+```text
+/cua-mode native
+/cua-mode jev
+```
+
+默认 native；可用 `JEV_CUA_MODE=native|jev` 设置会话初始值。用户通过命令做的选择保存在 pi 当前会话分支，reload 恢复。缺少/丢失 Jev Key 时转 native，不发送请求；之后补 Key 不会偷偷重新启用 Jev，必须再次显式选择。运行中拒绝切模式，先等待或正常取消。不提供模糊任务分类或 auto 模式。
+
+原生工具：`cua_list_apps`、`cua_get_app_state`、`cua_click`、`cua_drag`、`cua_perform_secondary_action`、`cua_press_key`、`cua_scroll`、`cua_select_text`、`cua_set_value`、`cua_type_text`。前缀避免覆盖 pi-codex-cua 的同名无前缀工具。
+
+`cua_get_app_state` 返回 stateId。动作必须带同一应用的 stateId；它在当前 agent turn 内最多有效 60 秒，一次动作尝试后即消费。模式切换、另一次观测、异常或 agent 结束会清理旧状态。优先使用该快照里的元素编号；坐标动作必须有本次返回的原生截图。原生观察接受菜单/弹窗/部分状态，不强制 standard window 根；不能将局部状态误称为完整页面。stateId 并不保证界面原子性，操作后仍要重新读取验证。
+
+Jev 对目标不确定时返回 needs_planner，交回主 Agent。仅此结果在当前 turn 内开放**原应用、剩余预算范围内**的原生动作；主 Agent 先读取新状态，再作独立判断，不自动重放 Jev 动作。原生接管消耗剩余预算，错误、agent 结束或新 Jev 任务会清理它。`confirm`/取消/未知结果不启用这个接管通道。
+
+Native 的判断与后果性操作授权由主 Agent 负责，不使用 Jev 的置信度/关键词分类；两者都经过应用白名单、官方授权和状态检查。用户显式切模式不代表可以绕过拒绝或扩大任务授权。
 
 ### pi 配置
 
 扩展自动读取**包目录**的 `.env.local`，不是启动 cwd 的任意环境文件。密钥只在内部使用，不写进 process.env 或 Sky 子进程，不在工具参数和结果里传递。
 
 ```dotenv
-TYPESAFE_API_KEY=your-key
+JEV_CUA_MODE=native
 JEV_CUA_ALLOWED_APPS=Calculator
+# 只有 jev 模式需要：
+# TYPESAFE_API_KEY=your-key
 ```
 
 文件必须属于当前用户，权限为 `600`，已被 Git 忽略。也可使用进程环境的 `TYPESAFE_API_KEY`；使用 `JEV_CUA_ENV_FILE` 指向其他私有文件。基础白名单遵循环境变量优先于文件，默认允许 Calculator。新增应用也可通过下面的专用 skill 单条追加，不必编辑含密钥的文件。普通桌面任务不得自行扩展名单。
@@ -82,7 +116,11 @@ npm run allow-app -- 'Wechat Devtools'
 
 `verify` 在 pi 工具中为 `{role, labelEquals}`：对重新读取的 AX 元素完整标签做精确匹配，不能执行 JS。例如先从 observe 确认计算器结果的实际文本格式，再设置对应标签；不要猜 `Value:` / ID / 本地化格式。
 
-图片会被桥接层收到但在 adapter 中丢弃，不进入 Jev 请求、pi 工具输出或轨迹。AX 工具输出最多 20 KB/400 行。默认不写本地轨迹；显式批准 `fullTrace: true` 后，完整 AX 和决策/动作轨迹会写入包目录 `runs/<UUID>.jsonl`。日志文件为 600、目录为 700，可能含敏感界面文本，不自动上传；不要直接公开日志。使用说明见 [完整动作轨迹](docs/action-trace.md)。已有的 pi-codex-cua 可以保持安装，但不要与本插件同时操作桌面；底层工具的其他扩展 hooks 不会拦截本插件内部动作，因此本插件保留自己的敏感动作策略，并正常转交官方授权。
+**数据去向**：native 将 AX 和原生截图提供给当前 pi 主模型，不调用 Jev，但不等于纯本地或没有主模型费用。native 文本最多 50 KB/2000 行；兼容文本观察及 Jev 结果最多 20 KB/400 行。Jev 不接收截图。
+
+插件默认不额外写完整轨迹；`jev_cua_run(fullTrace:true)` 经知情确认后只记录这一次 Jev 循环，原生接管不会悄悄续写该文件。native 工具使用 pi 正常的会话记录（可能含截图），应按 pi 设置管理；不能把“没有 fullTrace 文件”理解为会话不留存。日志文件为 600、目录为 700，可能敏感，不自动上传。详见 [完整动作轨迹](docs/action-trace.md)。
+
+原生和 Jev 共用连接、串行锁和官方授权。切勿同时使用其他 Computer Use 通道操作同一桌面。可以与 pi-codex-cua 共存，但同一包的新旧安装来源要去重，避免 `jev_cua_*` 兼容名称重复注册。
 
 Sky 仍要求官方运行时及其权限，支持原来的 `PI_CODEX_CUA_CLIENT` / `PI_CODEX_CUA_CODEX` / `PI_CODEX_CUA_SERVICE` / `PI_CODEX_CUA_SOCKET_DIRECTORY` / `PI_CODEX_CUA_RESOURCES` 路径覆盖。不会绕过系统提示、应用授权、屏幕锁定或站点限制。取消或超时会关闭连接，不自动重试写操作；已派发动作可能已生效。首次联调的授权回调问题及修复证据见 [Sky 排查记录](docs/sky-diagnostics.md)。
 
@@ -115,7 +153,7 @@ nodeRepl.write(result);
 
 真实执行需要用户授权，把 `dryRun` 改为 `false`，并尽量提供从当前 AX 确定的 `verify(ax)`。例如翻月任务应匹配**目标月份的显示值**，不能只检查“下一月”按钮存在。不能复用示例假定的月份或元素编号。
 
-TypeSafe 合成样例 3/3 通过。实际计算器已完成并读取确认 12+3232=3244、323423×323244=104544544212；12+30232 的早期尝试曾失败。Music 已能提交搜索词，但上次最终读取被用户取消，尚未确认匹配结果。新的轻量确认/主 Agent 交接流程已通过离线测试，仍待真实任务体验验证。Codex cua_repl 旧入口未联调，不把模拟测试当作桌面验收。
+TypeSafe 合成样例 3/3 通过。实际计算器已完成并读取确认 12+3232=3244、323423×323244=104544544212；12+30232 的早期尝试曾失败。Music 已能提交搜索词，但上次最终读取被用户取消，尚未确认匹配结果。新单包双模式另已实测 native 的 6+7、真实 Jev 的 12+30232，以及明确含模拟的受控实机接管链路。测试边界和仍未覆盖项见 [本地验收](docs/local-acceptance.md)，不能据此宣称超过官方 Codex。Codex cua_repl 旧入口未联调，不把模拟测试当作桌面验收。
 
 ## 核心 `runTask()` 参数（pi 工具提供受限子集）
 
@@ -198,7 +236,7 @@ npm run eval -- --live      # 需要 TYPESAFE_API_KEY；会向 TypeSafe 发送�
 
 - Jev 仍按总目标逐轮选择动作，没有可靠的结构化任务进度管理；曾在计算器任务中耗尽预算而未完成。
 - AX 候选解析依赖角色和标签，Music 已发现并修复可选行和 search text field 漏识别，其他控件仍可能遗漏。
-- Chrome 管理后台联调中，实际页面已经跳转，Sky 却持续返回侧栏子菜单而非完整页面。当前 full-tree 校验会拒绝此类结果，复杂表单与批量发布尚未验收。
+- Chrome 管理后台联调中，实际页面已经跳转，Sky 却持续返回侧栏子菜单而非完整页面。Jev 的 full-tree 校验会拒绝此类结果；新 native 模式直接返回菜单，不加这一拒绝，但不保证 Sky 会返回完整页面。复杂表单与批量发布仍未验收。
 - `needs_planner` 提供交接上下文和剩余预算，不是保证自动恢复的执行器；敏感操作、取消或未知结果不能被自动重放。
 - 本机 Codex/Sky 为私有运行时，版本变化可能影响协议和授权。插件不包含这些二进制，也不绕过其授权。
 

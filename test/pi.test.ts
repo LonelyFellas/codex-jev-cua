@@ -10,12 +10,14 @@ import { createSkyDriver, skyText } from "../src/sky-driver.ts";
 import { SkyClient, newTurnIdentity, prepareArguments, requestMeta } from "../src/sky/client.ts";
 import { runTask } from "../src/loop.ts";
 import { createJevDecider } from "../src/jev.ts";
+import { nativeToolNames } from "../src/native-tools.ts";
 
 const AX = 'Window: Calculator\n0 standard window Calculator\n  1 text 0\n  10 button 6\n  11 button Equals';
 const decision = { action: "click_element" as const, targetIndex: 10, confidence: 1, done: 0, risk: 0 };
 
 function harness(consent = true, hasUI = true, nativeApproval = false, traceDirectory?: string) {
   const tools = new Map<string, ToolDefinition>();
+  let activeTools: string[] = [];
   const events = new Map<string, () => void>();
   const calls: string[] = [];
   let display = AX;
@@ -24,13 +26,16 @@ function harness(consent = true, hasUI = true, nativeApproval = false, traceDire
   let creations = 0;
   let closes = 0;
   const pi = {
-    registerTool(tool: ToolDefinition) { tools.set(tool.name, tool); },
+    registerTool(tool: ToolDefinition) { tools.set(tool.name, tool); activeTools.push(tool.name); },
+    getActiveTools() { return activeTools; },
+    setActiveTools(names: string[]) { activeTools = names; },
+    appendEntry() {},
     registerCommand() {},
     on(name: string, fn: () => void) { events.set(name, fn); },
   } as unknown as ExtensionAPI;
   registerJevCodexCua(pi, {
     traceDirectory,
-    config: () => ({ apiKey: "test-key", allowedApps: ["Calculator"], envFile: "/not-real" }), runtimeCheck() {},
+    config: () => ({ apiKey: "test-key", allowedApps: ["Calculator"], envFile: "/not-real", mode: "jev" }), runtimeCheck() {},
     client: () => {
       creations++;
       return {
@@ -62,7 +67,7 @@ function harness(consent = true, hasUI = true, nativeApproval = false, traceDire
 test("pi factory and local status never start a process or disclose key", async () => {
   const h = harness();
   assert.equal(h.creations, 0);
-  assert.deepEqual([...h.tools.keys()], ["jev_cua_status", "jev_cua_observe", "jev_cua_run"]);
+  assert.deepEqual([...h.tools.keys()], ["cua_status", "jev_cua_status", ...nativeToolNames, "jev_cua_observe", "jev_cua_run"]);
   const result = await h.call("jev_cua_status");
   assert.match(JSON.stringify(result), /apiKeyConfigured/);
   assert.ok(!JSON.stringify(result).includes("test-key"));
@@ -123,7 +128,7 @@ test("only actual native app approval asks the user; denial and headless mode ne
   await h.call("jev_cua_observe", { appName: "Calculator" });
   assert.equal(h.prompts, 1, "Only the official native request should show a dialog.");
   for (const denied of [harness(false, true, true), harness(true, false, true)]) {
-    await assert.rejects(denied.call("jev_cua_observe", { appName: "Calculator" }), /Sky action failed/);
+    await assert.rejects(denied.call("jev_cua_observe", { appName: "Calculator" }), /Sky rejected/);
     assert.deepEqual(denied.calls, ["get_app_state"]);
   }
 });
@@ -163,6 +168,9 @@ test("config loads package env, enforces permissions and does not modify process
     await writeFile(path, "TYPESAFE_API_KEY=synthetic-only\nJEV_CUA_ALLOWED_APPS=Calculator, TextEdit\n", { mode: 0o600 });
     assert.deepEqual(loadPiConfig({}, path), { apiKey: "synthetic-only", allowedApps: ["Calculator", "TextEdit"], envFile: path });
     assert.equal(loadPiConfig({ TYPESAFE_API_KEY: "override" }, path).apiKey, "override");
+    assert.equal(loadPiConfig({ JEV_CUA_MODE: "native" }, path).mode, "native");
+    assert.equal(loadPiConfig({ JEV_CUA_MODE: "jev" }, path).mode, "jev");
+    assert.throws(() => loadPiConfig({ JEV_CUA_MODE: "auto" }, path), /native or jev/);
     assert.equal(process.env.TYPESAFE_API_KEY, before);
     await chmod(path, 0o644);
     assert.throws(() => loadPiConfig({}, path), /permissions/);

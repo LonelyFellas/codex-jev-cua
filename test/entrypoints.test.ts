@@ -24,6 +24,12 @@ test("installer materializes source path, refuses overwrite and uninstalls only 
     assert.equal(install("--uninstall").status, 0);
   } finally { await rm(home, { recursive: true, force: true }); }
 });
+test("controlled real-desktop handoff test refuses to run without explicit --live", () => {
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", join(root, "scripts/accept-handoff.ts")], { encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Pass --live/);
+  assert.equal(result.stdout, "");
+});
 test("online evaluation requires explicit --live opt-in", () => {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", join(root, "src/eval.ts")], {
     encoding: "utf8", env: { ...process.env, TYPESAFE_API_KEY: "not-a-real-key" },

@@ -13,6 +13,6 @@
 - https://github.com/Sac-Y/Jev-cu
 - 参考提交：e2cc92d731fac6e6aeb7acbd3c105cf23552cdec
 - 原 package.json 声明：`"license": "ISC"`；`author` 字段为空。
-- 此提交未包含单独 LICENSE 文件或版权声明；本文件不补造版权归属或授权文本。若要对外发布，需进一步确认原作者的授权说明。
+- 此提交未包含单独 LICENSE 文件或版权声明；不补造原作者身份或原版权声明。依据其 package.json 的 ISC 声明，在 THIRD_PARTY_LICENSES.md 保留来源及标准 ISC 条款。
 
-本次为 TypeScript 迁移与本地开发版本，保留核心设计，增加类型和部分失败关闭校验。未声称与上游完全等价或性能优于上游。
+本项目新增代码经维护者确认采用 MIT，见根目录 LICENSE；第三方部分继续保留各自的 ISC/MIT 条款，不因 TypeScript 迁移而抹去。当前发行仍为实验原型，未声称与上游完全等价或性能优于上游。

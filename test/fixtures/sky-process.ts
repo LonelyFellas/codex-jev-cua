@@ -14,9 +14,11 @@ lines.on("line", (line) => {
     if (process.argv.includes("hang-initialize")) return;
     process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { protocolVersion: "2025-06-18" } }) + "\n");
   } else if (request.method === "tools/list") {
-    const tools = ["get_app_state", "click", "hang", "rpc_error", "approve", "approve_numeric", "unsupported_form", "unknown_server_method"].map((name) => ({ name, inputSchema: {
+    const tools = ["get_app_state", "click", "select_text", "hang", "rpc_error", "approve", "approve_numeric", "unsupported_form", "unknown_server_method"].map((name) => ({ name, inputSchema: {
       type: "object", additionalProperties: false,
-      properties: name === "get_app_state" ? { app: { type: "string" } } : { app: { type: "string" }, element_index: { type: "string" } },
+      properties: name === "get_app_state" ? { app: { type: "string" } }
+        : name === "select_text" ? { app: { type: "string" }, element_index: { type: "string" }, text: { type: "string" }, selection: { type: "string" } }
+        : { app: { type: "string" }, element_index: { type: "string" } },
     } }));
     process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { tools } }) + "\n");
   } else if (request.method === "tools/call") {
