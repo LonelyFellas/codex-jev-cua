@@ -6,11 +6,17 @@ import { tmpdir } from "node:os";
 import { loadPiConfig } from "../src/pi-config.ts";
 import { addAppGrant, appGrantsPath } from "../src/app-grants.ts";
 
-test("app access defaults to allowlist; explicit all is reversible without replacing grants", async () => {
+test("native app access defaults to all; explicit choices preserve grants", async () => {
   const directory = await mkdtemp(join(tmpdir(), "jev-access-"));
   const file = join(directory, ".env.local");
   try {
+    assert.equal(loadPiConfig({}, file).appAccess, "all");
+    assert.equal(loadPiConfig({}, file).appAccessSource, "default");
+    assert.equal(loadPiConfig({ JEV_CUA_MODE: "native" }, file).appAccess, "all");
+    assert.equal(loadPiConfig({ JEV_CUA_MODE: "jev" }, file).appAccess, "allowlist");
+    await writeFile(file, "JEV_CUA_MODE=jev\n", { mode: 0o600 });
     assert.equal(loadPiConfig({}, file).appAccess, "allowlist");
+    assert.equal(loadPiConfig({ JEV_CUA_MODE: "native" }, file).appAccess, "all");
     const contents = "JEV_CUA_APP_ACCESS=all\nJEV_CUA_ALLOWED_APPS=Calculator\n";
     await writeFile(file, contents, { mode: 0o600 });
     addAppGrant("Music", appGrantsPath(file));
@@ -23,9 +29,10 @@ test("app access defaults to allowlist; explicit all is reversible without repla
     assert.equal(restricted.appAccess, "allowlist");
     assert.deepEqual(restricted.allowedApps, all.allowedApps);
     await writeFile(file, "JEV_CUA_APP_ACCESS=allowlist\n", { mode: 0o600 });
+    assert.equal(loadPiConfig({}, file).appAccess, "allowlist");
     assert.equal(loadPiConfig({ JEV_CUA_APP_ACCESS: "all" }, file).appAccess, "all");
     await writeFile(file, "JEV_CUA_ALLOWED_APPS=*\n", { mode: 0o600 });
-    assert.equal(loadPiConfig({}, file).appAccess, "allowlist", "Wildcard entries cannot enable all-app access.");
+    assert.equal(loadPiConfig({ JEV_CUA_MODE: "jev" }, file).appAccess, "allowlist", "Wildcard entries cannot enable all-app access.");
     assert.equal(await readFile(appGrantsPath(file), "utf8"), grants);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

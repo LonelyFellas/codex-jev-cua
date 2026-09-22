@@ -92,7 +92,8 @@ Native 的判断与后果性操作授权由主 Agent 负责，不使用 Jev 的�
 
 ```dotenv
 JEV_CUA_MODE=native
-JEV_CUA_APP_ACCESS=allowlist
+# native 默认 all；如需限制应用，取消下一行注释：
+# JEV_CUA_APP_ACCESS=allowlist
 JEV_CUA_ALLOWED_APPS=Calculator
 # 只有 jev 模式需要：
 # TYPESAFE_API_KEY=your-key
@@ -114,7 +115,7 @@ JEV_CUA_ALLOWED_APPS=Calculator
 
 选择存于 `<envFile>.access.json`（默认 `.env.local.access.json`），由原子写入保护，权限为 600。重复选择不重写；异常文件、符号链接或锁冲突会停止，不强行修复。授权文件、锁和临时文件均不打包。
 
-**优先级：显式授权文件 > 进程环境 `JEV_CUA_APP_ACCESS` > 私有环境文件 > `allowlist`。** 因此 Skill 的 `allowlist` 能覆盖环境里残留的 `all`；无授权文件时保持原优先级。不要通过删除授权文件来撤销，否则可能恢复环境里的全应用访问。
+**优先级：显式授权文件 > 进程环境 `JEV_CUA_APP_ACCESS` > 私有环境文件 > 模式默认值（native 为 `all`，配置为 Jev 时为 `allowlist`）。** 因此 Skill 的 `allowlist` 能覆盖环境里残留的 `all`；无授权文件时保持原优先级。不要通过删除授权文件来撤销，否则可能恢复环境里的全应用访问。
 
 `cua_status` 新增 `appAccessFile`（授权文件绝对路径）与 `appAccessSource`（`grant-file` / `environment` / `env-file` / `default`）。缺少这些字段或 Skill 脚本路径与当前插件不一致时，不写文件、不误报成功。先 `/reload`，仍不支持再使用 `pi install npm:jev-codex-cua@<已发布的支持版本>` 并用 `pi list` 核对；`pnpm install` 不会更新 pi 管理的插件。不得猜测未发布的版本号。
 
@@ -126,7 +127,7 @@ JEV_CUA_ALLOWED_APPS=Calculator
 JEV_CUA_APP_ACCESS=all
 ```
 
-- 缺省为 `allowlist`，仅允许基础名单和 `.apps.json` 中的应用；`all` 适用于 native、兼容文本观察和 Jev，不必逐个追加应用。不接受 `*`、`true` 等代替值，配置错误时拒绝执行。
+- 从 0.3.1 起，未配置模式或配置为 native 时，应用范围默认 `all`；配置 `JEV_CUA_MODE=jev` 时仍默认 `allowlist`。已有显式应用范围不被覆盖；会话内切换模式不改写配置推导出的应用范围。`allowlist` 仅允许基础名单和 `.apps.json` 中的应用；`all` 适用于 native、兼容文本观察和 Jev，不必逐个追加应用。不接受 `*`、`true` 等代替值，配置错误时拒绝执行。
 - 手动配置来源中，环境变量优先于 `.env`；若 `appAccessSource=grant-file`，应使用 Skill 切回 `allowlist`，手动环境设置不会覆盖已保存的选择。两种方式都保留原基础/附加名单。
 - 配置每次工具调用重读：私有文件改动在下一次调用生效；进程环境改动需要重启 pi。首次更新代码需 `/reload`。配置变更不主动中断正在执行的 Jev 循环，需中止时请正常取消任务。
 - 动作仍指定一个具体应用名、bundle ID 或 `.app` 路径，不能传通配符。应用范围不等于任务授权，普通桌面任务或网页内容不能让模型自行启用 `all`。

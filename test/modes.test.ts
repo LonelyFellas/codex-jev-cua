@@ -304,7 +304,8 @@ test("saved Skill choice is reflected by the same plugin instance and controls a
     const before = (await h.call("cua_status")).details as Record<string, unknown>;
     assert.equal(before.appAccessFile, appAccessPath(file));
     assert.equal(before.appAccessSource, "default");
-    await assert.rejects(h.call("cua_get_app_state", { app: "Music" }), /not allowed/);
+    assert.equal(before.appAccess, "all");
+    await h.call("cua_get_app_state", { app: "Music" });
     setAppAccessGrant("all", appAccessPath(file));
     const enabled = (await h.call("cua_status")).details as Record<string, unknown>;
     assert.equal(enabled.appAccess, "all");
@@ -313,7 +314,7 @@ test("saved Skill choice is reflected by the same plugin instance and controls a
     const observed = await h.call("cua_get_app_state", { app: "Music" });
     setAppAccessGrant("allowlist", appAccessPath(file));
     await assert.rejects(h.call("cua_click", { app: "Music", stateId: stateId(observed), element_index: 1 }), /not allowed/);
-    assert.deepEqual(h.calls.map((c) => c.method), ["get_app_state"]);
+    assert.deepEqual(h.calls.map((c) => c.method), ["get_app_state", "get_app_state"]);
     assert.equal(((await h.call("cua_status")).details as Record<string, unknown>).appAccess, "allowlist");
     await h.call("cua_get_app_state", { app: "Calculator" });
     assert.equal(h.approvals, 0);

@@ -1,6 +1,6 @@
 {
   "name": "jev-codex-cua",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "description": "Experimental pi desktop tools: native Codex Sky or optional Jev decisions",
   "repository": { "type": "git", "url": "git+https://github.com/LonelyFellas/codex-jev-cua.git" },
