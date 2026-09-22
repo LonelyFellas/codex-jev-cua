@@ -3,7 +3,7 @@
 ## 最小方案
 
 - 新增独立配置 JEV_CUA_APP_ACCESS=allowlist|all，默认 allowlist。用户显式设置 all 才启用全应用范围，不把名单中的 * 解释为授权。
-- 配置沿用环境变量优先于私有环境文件的规则；未知值报错，不回退到 all。
+- 未保存独立授权选择时，配置沿用环境变量优先于私有环境文件的规则；未知值报错，不回退到 all。后续新增的 Skill 授权文件具有更高优先级，见 [应用范围 Skill 设计](../app-access-skill/design.md)。
 - 原 allowedApps 和 .apps.json 保留，切回 allowlist 即恢复；不变更单应用追加脚本的语义。
 - 统一应用范围检查，覆盖 observe/run 及 native 入口。应用身份发现 list_apps 保持原行为，不代表窗口读取授权。全应用模式仍要求具体应用名，不把 all 当 Sky app 参数。
 - Jev 循环仅接受本次已通过范围检查的目标应用，避免将全局通配能力传入策略层；敏感动作策略不改。
