@@ -1,0 +1,31 @@
+{
+  "name": "jev-codex-cua",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript orchestration for Jev decisions and Codex Computer Use",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src", "skill", "skills", "fixtures", "README.md", "NOTICE.md"],
+  "keywords": ["pi-package", "computer-use", "jev", "codex"],
+  "pi": { "extensions": ["./src/pi-extension.ts"], "skills": ["./skills"] },
+  "scripts": {
+    "build": "tsc",
+    "allow-app": "node --experimental-strip-types src/add-app.ts",
+    "check": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "eval": "npm run build && node dist/eval.js",
+    "install-skill": "npm run build && node dist/install-skill.js",
+    "uninstall-skill": "npm run build && node dist/install-skill.js --uninstall"
+  },
+  "engines": { "node": ">=22.19.0" },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0", "typescript": "^5.9.0",
+    "@earendil-works/pi-ai": "0.86.1", "@earendil-works/pi-coding-agent": "0.86.1", "typebox": "^1.3.7"
+  }
+}
