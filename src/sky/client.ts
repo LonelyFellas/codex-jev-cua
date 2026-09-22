@@ -91,6 +91,11 @@ export class SkyClient {
       // Some Sky versions expose disableDiff at a higher-level JS layer only.
       // Never send unsupported options through the strict native MCP interface.
       if (method === "get_app_state" && !Object.hasOwn(schema.inputSchema?.properties ?? {}, "disableDiff")) delete prepared.disableDiff;
+      if (method === "select_text" && prepared.selection_type !== undefined
+          && !Object.hasOwn(schema.inputSchema?.properties ?? {}, "selection_type") && Object.hasOwn(schema.inputSchema?.properties ?? {}, "selection")) {
+        prepared.selection = prepared.selection_type;
+        delete prepared.selection_type;
+      }
       if (schema.inputSchema?.additionalProperties === false) {
         const unexpected = Object.keys(prepared).filter((key) => !Object.hasOwn(schema.inputSchema?.properties ?? {}, key));
         if (unexpected.length) throw new Error(`Unsupported Sky arguments for ${method}: ${unexpected.join(", ")}`);

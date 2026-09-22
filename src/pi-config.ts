@@ -3,7 +3,8 @@ import { parseEnv } from "node:util";
 import { fileURLToPath } from "node:url";
 import { appGrantsPath, readAppGrants } from "./app-grants.ts";
 
-export interface PiConfig { apiKey?: string; allowedApps: string[]; envFile: string }
+export type CuaMode = "native" | "jev";
+export interface PiConfig { apiKey?: string; allowedApps: string[]; envFile: string; mode?: CuaMode }
 export function loadPiConfig(env: NodeJS.ProcessEnv = process.env, defaultFile = fileURLToPath(new URL("../.env.local", import.meta.url))): PiConfig {
   const envFile = env.JEV_CUA_ENV_FILE ?? defaultFile;
   let local: Record<string, string | undefined> = {};
@@ -22,6 +23,8 @@ export function loadPiConfig(env: NodeJS.ProcessEnv = process.env, defaultFile =
     ...allowed.split(",").map((value) => value.trim()).filter(Boolean),
     ...readAppGrants(appGrantsPath(envFile)),
   ])];
+  const mode = env.JEV_CUA_MODE ?? local.JEV_CUA_MODE;
+  if (mode !== undefined && mode !== "native" && mode !== "jev") throw new Error("JEV_CUA_MODE must be native or jev; auto routing is not supported.");
   // Never copy secrets into process.env, tool results or the Sky child process.
-  return { apiKey, allowedApps, envFile };
+  return { apiKey, allowedApps, envFile, ...(mode ? { mode } : {}) };
 }

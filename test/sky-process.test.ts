@@ -131,6 +131,14 @@ test("cancelling during approval aborts its signal and never sends acceptance", 
     await assert.rejects(s.client.callSky("get_app_state", {}, turn), /closed/);
   } finally { await s.cleanup(); }
 });
+test("native select_text negotiates legacy selection spelling without exposing local state tokens", async () => {
+  const s = await setup();
+  try {
+    const result = await s.client.callSky("select_text", { app: "Calculator", element_index: 2, text: "6", selection_type: "cursor_after" }, turn);
+    const item = result.content?.[0];
+    assert.deepEqual(JSON.parse(item?.type === "text" ? item.text : "").args, { app: "Calculator", element_index: "2", text: "6", selection: "cursor_after" });
+  } finally { await s.cleanup(); }
+});
 test("RPC errors are redacted and close the client", async () => {
   const s = await setup();
   try {
