@@ -1,10 +1,7 @@
-name: Validate and publish npm
+name: Publish npm
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
     tags: ['v*']
 
 permissions:
@@ -15,25 +12,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '24'
-          package-manager-cache: false
-      - run: npm ci --ignore-scripts
-      - run: npm run check
-      - run: npm test
-      - run: npm run test:package
-
   publish:
     if: github.event_name == 'push' && github.ref_type == 'tag' && github.repository == 'LonelyFellas/codex-jev-cua'
-    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -54,6 +34,8 @@ jobs:
           git fetch origin main:refs/remotes/origin/main
           node --experimental-strip-types scripts/check-release.ts
       - run: npm ci --ignore-scripts
+      # prepublishOnly runs check, tests and package verification exactly once here.
+      # Do not add a duplicate validate job or skip lifecycle scripts.
       - name: Publish with npm OIDC (includes prepublishOnly gates)
         run: npm publish --access public --provenance --registry=https://registry.npmjs.org/
       - name: Confirm registry version
