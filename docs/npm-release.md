@@ -2,16 +2,24 @@
 
 包名：`jev-codex-cua`，当前源码版本见 `package.json`（实验原型）。Registry 是否已发布以 `npm view jev-codex-cua versions` 为准，不以本地版本或 tag 存在作为发布成功证据。
 
-## Tag 触发
+## CI 与 Tag 发布分工
 
-`.github/workflows/publish.yml`：
+| 事件 | Workflow | 行为 |
+|---|---|---|
+| PR → main | `ci.yml`（CI） | 类型检查、离线测试、打包/隔离安装验证 |
+| main 推送 | `ci.yml`（CI） | 验证实际合并结果，不发布 |
+| v* tag 推送 | `publish.yml`（Publish npm） | 版本/主线检查 → `npm publish` 内置发布门禁 → 发布 → registry 确认 |
 
-- PR 和 `main` 推送运行类型检查、离线测试和真实打包/隔离安装验证，不发布。
+CI 只使用 contents:read，缓存以 package-lock.json 为键的 npm 下载内容，仍每次执行 `npm ci`，不复用 node_modules。同一 PR/分支的新提交会取消过时 CI；不同 PR 不互相取消。PR 和 main 验证各有用途，不跨提交复用通过结论。
+
+发布流程不再重复启动 validate job：`prepublishOnly` 在 tag 运行中完整执行一遍 check、test 和 test:package。发布 job 不使用 CI 缓存，不因新提交取消正在进行的发布；不跳过生命周期脚本或其他门禁。
+
+`.github/workflows/publish.yml` 的文件名与 npm Trusted Publisher 绑定保持不变：
 - 推送 `v*` tag 才可能发布；发布检查只接受稳定版 `vX.Y.Z`，tag 必须与 package.json、package-lock.json 的版本一致。
 - tag 对应提交必须已经包含在 `origin/main`，不能从未合并的功能分支发行。
 - 只有官方仓库 `LonelyFellas/codex-jev-cua` 的 tag push 能进入发布 job。
 - 发布 job 在 GitHub 托管的 Ubuntu runner 运行，Node 24，使用 npm Trusted Publishing / OIDC 和 provenance，不配置长期 npm token。
-- 验证 job 只有 contents:read；发布 job 额外获得 id-token:write。不启用真实桌面或 TypeSafe 测试。
+- 只有发布 job 额外获得 id-token:write。不启用真实桌面或 TypeSafe 测试。
 - `npm publish` 正常执行 prepublishOnly 门禁，不跳过脚本。发布后查询 registry 验证版本，等待预算最多 10 分钟；查询可重试，发布本身不自动重试。npm 可能先接收包，再异步处理后才允许查询。
 
 ## 首次绑定 Trusted Publisher
@@ -50,7 +58,7 @@ git tag -a v0.2.0 origin/main -m 'Release jev-codex-cua 0.2.0'
 git push origin v0.2.0
 ```
 
-4. 查看 Actions 的 `Validate and publish npm` 运行，确认 publish job 成功，再查询：
+4. 查看 Actions 的 `Publish npm` 运行，确认 publish job 成功，再查询：
 
 ```bash
 npm view jev-codex-cua@0.2.0 version dist.integrity dist.attestations --json
