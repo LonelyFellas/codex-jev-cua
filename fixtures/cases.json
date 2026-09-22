@@ -1,0 +1,26 @@
+[
+  {
+    "name": "calendar-previous-month",
+    "app": "Calendar",
+    "goal": "Switch to the previous month",
+    "ax": "Window: Calendar\n0 standard window Calendar\n  1 list Sunday, August 30\n  2 list Monday, August 31\n  20 button previous month\n  21 button Today\n  22 button next month\n  23 text September 2026",
+    "expectedIndex": 20,
+    "expectedAction": "click_element"
+  },
+  {
+    "name": "calculator-digit",
+    "app": "Calculator",
+    "goal": "Enter digit 6",
+    "ax": "Window: Calculator\n0 标准窗口 计算器\n  1 文本 0\n  10 按钮 Description: 5, ID: Five\n  11 按钮 Description: 6, ID: Six\n  12 按钮 Description: 等于, ID: Equals",
+    "expectedIndex": 11,
+    "expectedAction": "click_element"
+  },
+  {
+    "name": "editor-search",
+    "app": "TextEdit",
+    "goal": "Focus the search field",
+    "ax": "Window: Scratch\n0 standard window Scratch\n  4 text area Value: local scratch text\n  5 search field Search\n  6 button Next match\n  7 button Previous match",
+    "expectedIndex": 5,
+    "expectedAction": "click_element"
+  }
+]
