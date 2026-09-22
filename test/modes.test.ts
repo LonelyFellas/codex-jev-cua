@@ -1,5 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadPiConfig } from "../src/pi-config.ts";
+import { appAccessPath, setAppAccessGrant } from "../src/app-access-grants.ts";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerJevCodexCua } from "../src/pi-extension.ts";
 import { formatNativeResult, newSnapshot, validateNativeAction } from "../src/native-state.ts";
@@ -9,8 +14,8 @@ import type { SkyResult } from "../src/sky/client.ts";
 
 const AX = "0 standard window Calculator\n1 button 6\n2 text field (settable) Value: 0\nThe focused UI element is 2 text field";
 type Entry = { type: "custom"; customType: string; data: unknown };
-function setup(options: { config?: PiConfig; entries?: Entry[]; hasUI?: boolean; approved?: boolean; nativeApproval?: boolean } = {}) {
-  let config: PiConfig = options.config ?? { allowedApps: ["Calculator", "Google Chrome"], envFile: "/unused" };
+function setup(options: { config?: PiConfig | (() => PiConfig); entries?: Entry[]; hasUI?: boolean; approved?: boolean; nativeApproval?: boolean } = {}) {
+  let config = options.config ?? { allowedApps: ["Calculator", "Google Chrome"], envFile: "/unused" };
   const tools = new Map<string, ToolDefinition>();
   const commands = new Map<string, { handler(args: string, ctx: ExtensionCommandContext): Promise<void> }>();
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
@@ -32,7 +37,7 @@ function setup(options: { config?: PiConfig; entries?: Entry[]; hasUI?: boolean;
     sendMessage(message: { content: string }) { notices.push(message.content); },
     on(name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) { handlers.set(name, handler); },
   } as unknown as ExtensionAPI;
-  registerJevCodexCua(pi, { config: () => config, runtimeCheck() {}, client: () => {
+  registerJevCodexCua(pi, { config: () => typeof config === "function" ? config() : config, runtimeCheck() {}, client: () => {
     created++;
     return { async callSky(method, args, turn, signal, approve) {
       calls.push({ method, args, turnId: turn.turnId });
@@ -288,6 +293,31 @@ test("all-app access never fakes official approval in either mode", async () => 
       assert.equal(h.approvals, options.hasUI ? 1 : 0);
     }
   }
+});
+
+test("saved Skill choice is reflected by the same plugin instance and controls app scope", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "jev-skill-runtime-"));
+  const file = join(directory, "config.env");
+  try {
+    await writeFile(file, "JEV_CUA_ALLOWED_APPS=Calculator\n", { mode: 0o600 });
+    const h = setup({ config: () => loadPiConfig({}, file) });
+    const before = (await h.call("cua_status")).details as Record<string, unknown>;
+    assert.equal(before.appAccessFile, appAccessPath(file));
+    assert.equal(before.appAccessSource, "default");
+    await assert.rejects(h.call("cua_get_app_state", { app: "Music" }), /not allowed/);
+    setAppAccessGrant("all", appAccessPath(file));
+    const enabled = (await h.call("cua_status")).details as Record<string, unknown>;
+    assert.equal(enabled.appAccess, "all");
+    assert.equal(enabled.appAccessSource, "grant-file");
+    assert.equal(enabled.systemPermissions, "not-checked");
+    const observed = await h.call("cua_get_app_state", { app: "Music" });
+    setAppAccessGrant("allowlist", appAccessPath(file));
+    await assert.rejects(h.call("cua_click", { app: "Music", stateId: stateId(observed), element_index: 1 }), /not allowed/);
+    assert.deepEqual(h.calls.map((c) => c.method), ["get_app_state"]);
+    assert.equal(((await h.call("cua_status")).details as Record<string, unknown>).appAccess, "allowlist");
+    await h.call("cua_get_app_state", { app: "Calculator" });
+    assert.equal(h.approvals, 0);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("busy native calls prevent both mode switching and overlapping operations", async () => {

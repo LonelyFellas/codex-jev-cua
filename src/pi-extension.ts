@@ -99,12 +99,13 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
     try { deps.runtimeCheck(); } catch (error) { runtimeError = error instanceof Error ? error.message : "Runtime unavailable."; }
     return { plugin: "jev-codex-cua", mode: mode ?? "native", modeReason, apiKeyConfigured: Boolean(config?.apiKey),
       appAccess: config ? config.appAccess ?? "allowlist" : undefined, allowedApps: config?.allowedApps ?? [],
+      appAccessFile: config?.appAccessFile, appAccessSource: config?.appAccessSource,
       officialApproval: "runtime-controlled", systemPermissions: "not-checked",
       runtimeAvailable: !runtimeError, configError, runtimeError, busy: active, networkChecked: false,
       ...(handoff ? { nativeHandoff: handoff } : {}) };
   }
   for (const name of ["cua_status", "jev_cua_status"]) {
-    pi.registerTool({ name, label: "CUA status", description: "Check native/jev mode, plugin app-access scope (allowlist/all), credential presence and runtime paths. Does not check or grant system/Sky permissions. No network, screenshots or desktop actions. Never exposes the key.",
+    pi.registerTool({ name, label: "CUA status", description: "Check native/jev mode, plugin app-access scope/source and dedicated grant-file path, credential presence and runtime paths. Does not check or grant system/Sky permissions. No network, screenshots or desktop actions. Never exposes the key.",
       parameters: Type.Object({}, { additionalProperties: false }), executionMode: "sequential", async execute() { return output(status()); } });
   }
   pi.registerCommand("jev-cua-status", { description: "检查双模式配置，不联网、不显示密钥", async handler(_args, ctx) {

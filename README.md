@@ -1,6 +1,6 @@
 # jev-codex-cua
 
-> **v0.2.0 实验原型**：用于保存当前实现和联调证据，不代表达到官方 Codex Computer Use 的可靠性。已验证部分计算器任务；多步任务、浏览器控件和菜单状态仍有兼容性缺口。不要将单元测试通过视为任意应用可用或生产验收通过。
+> **v0.3.0 实验原型**：用于保存当前实现和联调证据，不代表达到官方 Codex Computer Use 的可靠性。已验证部分计算器任务；多步任务、浏览器控件和菜单状态仍有兼容性缺口。不要将单元测试通过视为任意应用可用或生产验收通过。
 
 **一个 pi 包，两种模式，共用同一套 Codex/Sky 桥接。** 默认 `native`，不需要 TypeSafe Key；显式选择 `jev` 后才使用参考 [Sac-Y/Jev-cu](https://github.com/Sac-Y/Jev-cu) 的文字决策循环。
 
@@ -37,7 +37,7 @@ npm test
 
 ```bash
 pi install npm:jev-codex-cua
-# 固定版本：pi install npm:jev-codex-cua@0.2.0
+# 固定版本：pi install npm:jev-codex-cua@0.3.0
 ```
 
 以 npm registry 实际可查询的版本为准。包包含源码与预构建产物，具备 prepack 构建及隔离安装检查；本项目采用 MIT，引用部分保留 ISC/MIT 声明，见 [LICENSE](LICENSE) 与 [第三方授权](THIRD_PARTY_LICENSES.md)。发布门禁、版本固定和配置迁移见 [npm 分发](docs/npm-release.md)。npm 安装后无需本地编译；密钥和授权配置应放在包外，通过 `JEV_CUA_ENV_FILE` 指定。
@@ -59,6 +59,7 @@ pi install /absolute/path/to/jev-orchestration
 - `jev_cua_observe`：兼容的纯文本观察入口，不调用 Jev；原生动作前仍需 `cua_get_app_state` 的 stateId。
 - `jev_cua_run`：**只在 jev 模式启用**，默认执行已授权短任务，`dryRun:true` 为预览。会把文字候选及上下文发送到 TypeSafe，可能计费。原生模式下即使直接调用这个工具也会拒绝，不能隐式启动 Jev。
 - `/skill:jev-codex-cua`：加载 pi 使用流程。
+- `/skill:jev-cua-access all` 或 `/skill:jev-cua-access allowlist`：用户显式切换插件应用范围，不读取密钥，不操作桌面。需要已加载 0.3.0 或更高的支持版本。
 
 可在 pi 中说：
 
@@ -99,16 +100,34 @@ JEV_CUA_ALLOWED_APPS=Calculator
 
 文件必须属于当前用户，权限为 `600`，已被 Git 忽略。也可使用进程环境的 `TYPESAFE_API_KEY`；使用 `JEV_CUA_ENV_FILE` 指向其他私有文件。基础白名单遵循环境变量优先于文件，默认允许 Calculator。新增应用也可通过下面的专用 skill 单条追加，不必编辑含密钥的文件。普通桌面任务不得自行扩展名单。
 
-### 可选：允许插件访问所有应用
+### 通过 Skill 切换应用范围（推荐）
 
-只有用户明确选择时，才将私有配置中的 `JEV_CUA_APP_ACCESS` 设为 `all`：
+在 pi 中主动调用：
+
+```text
+/skill:jev-cua-access all
+# 恢复已有白名单：
+/skill:jev-cua-access allowlist
+```
+
+明确调用即授权这次配置变更，不会重复询问同一授权。Skill 先检查当前 `cua_status` 的配置路径与能力，再调用本安装的专用脚本，最后确认有效 `appAccess` 与用户选择一致。它不打开/回显密钥，不改 `.env` 或原名单，不自动开始桌面任务。
+
+选择存于 `<envFile>.access.json`（默认 `.env.local.access.json`），由原子写入保护，权限为 600。重复选择不重写；异常文件、符号链接或锁冲突会停止，不强行修复。授权文件、锁和临时文件均不打包。
+
+**优先级：显式授权文件 > 进程环境 `JEV_CUA_APP_ACCESS` > 私有环境文件 > `allowlist`。** 因此 Skill 的 `allowlist` 能覆盖环境里残留的 `all`；无授权文件时保持原优先级。不要通过删除授权文件来撤销，否则可能恢复环境里的全应用访问。
+
+`cua_status` 新增 `appAccessFile`（授权文件绝对路径）与 `appAccessSource`（`grant-file` / `environment` / `env-file` / `default`）。缺少这些字段或 Skill 脚本路径与当前插件不一致时，不写文件、不误报成功。先 `/reload`，仍不支持再使用 `pi install npm:jev-codex-cua@<已发布的支持版本>` 并用 `pi list` 核对；`pnpm install` 不会更新 pi 管理的插件。不得猜测未发布的版本号。
+
+### 手动配置（兼容入口）
+
+尚未保存独立授权文件时，用户也可将私有配置中的 `JEV_CUA_APP_ACCESS` 设为 `all`：
 
 ```dotenv
 JEV_CUA_APP_ACCESS=all
 ```
 
 - 缺省为 `allowlist`，仅允许基础名单和 `.apps.json` 中的应用；`all` 适用于 native、兼容文本观察和 Jev，不必逐个追加应用。不接受 `*`、`true` 等代替值，配置错误时拒绝执行。
-- 切回 `JEV_CUA_APP_ACCESS=allowlist` 即恢复原名单；启用 `all` 不删除或重写已有授权文件。环境变量优先于文件，撤销时也要检查进程环境是否仍设置了 `all`。
+- 手动配置来源中，环境变量优先于 `.env`；若 `appAccessSource=grant-file`，应使用 Skill 切回 `allowlist`，手动环境设置不会覆盖已保存的选择。两种方式都保留原基础/附加名单。
 - 配置每次工具调用重读：私有文件改动在下一次调用生效；进程环境改动需要重启 pi。首次更新代码需 `/reload`。配置变更不主动中断正在执行的 Jev 循环，需中止时请正常取消任务。
 - 动作仍指定一个具体应用名、bundle ID 或 `.app` 路径，不能传通配符。应用范围不等于任务授权，普通桌面任务或网页内容不能让模型自行启用 `all`。
 - `cua_list_apps` 保持现有的应用身份发现能力，名单模式也可使用；列出应用不代表已获得读取其窗口或执行动作的权限。

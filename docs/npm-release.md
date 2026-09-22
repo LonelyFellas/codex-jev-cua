@@ -50,18 +50,18 @@ npm trust github jev-codex-cua \
 
 1. 新任务从最新 `origin/main` 创建独立分支/worktree。
 2. 更新代码、文档及 package.json/package-lock.json 版本；执行本地门禁，提交 PR 并合入 main。
-3. Fetch 后在已合并提交上打 tag 并推送（以下 `0.2.0` 仅示范本次目标版本，后续使用新版本）：
+3. Fetch 后在已合并提交上打 tag 并推送（以下 `0.3.0` 仅示范本次目标版本，后续使用新版本）：
 
 ```bash
 git fetch origin
-git tag -a v0.2.0 origin/main -m 'Release jev-codex-cua 0.2.0'
-git push origin v0.2.0
+git tag -a v0.3.0 origin/main -m 'Release jev-codex-cua 0.3.0'
+git push origin v0.3.0
 ```
 
 4. 查看 Actions 的 `Publish npm` 运行，确认 publish job 成功，再查询：
 
 ```bash
-npm view jev-codex-cua@0.2.0 version dist.integrity dist.attestations --json
+npm view jev-codex-cua@0.3.0 version dist.integrity dist.attestations --json
 ```
 
 首次 `v0.2.0` 的 OIDC 发布和 provenance 生成成功，但当时只有 60 秒的查询窗口，因 npm 异步处理而超时。之后已从 registry 确认 `0.2.0`、源码提交 `530843fede500ba0b97e02ee05a99dc2605d2c05` 和 provenance；未重复发布。原运行保留查询失败记录，后续版本使用延长后的等待预算。
@@ -77,7 +77,7 @@ npm test
 npm run test:package
 ```
 
-`test:package` 触发 npm pack/prepack，安装 tarball 到临时目录，通过 pi 加载器验证 14 个工具、模式命令和 2 个 Skill，以及编译后 API。消费者采用 omit=dev、ignore-scripts、offline；legacy-peer-deps 仅模拟宿主提供 peer，不是绕过发布门禁。
+`test:package` 触发 npm pack/prepack，安装 tarball 到临时目录，通过 pi 加载器验证 14 个工具、模式命令和 3 个 Skill，以及编译后 API、无开发依赖的应用范围 CLI 和授权文件打包排除规则。消费者采用 omit=dev、ignore-scripts、offline；legacy-peer-deps 仅模拟宿主提供 peer，不是绕过发布门禁。
 
 可选实机测试必须显式授权并传 `--live`，不在 CI 中运行。`accept:app-access` 为真实 Sky 只读范围验收；`accept:handoff` 会操作 Calculator 且包含模拟决策。边界见 [本地验收](local-acceptance.md)。
 
@@ -96,9 +96,9 @@ npm run test:package
 ```bash
 pi install npm:jev-codex-cua
 # 固定版本（示例）：
-pi install npm:jev-codex-cua@0.2.0
+pi install npm:jev-codex-cua@0.3.0
 ```
 
 安装后 `/reload`。固定版本升级需重新指定新版本；非固定版本可用 `pi update npm:jev-codex-cua`。合并/发布不会自动更新用户当前安装或权限配置。
 
-密钥和应用范围配置应放在包外，通过 `JEV_CUA_ENV_FILE` 指定绝对路径，文件权限 600；相邻 `.apps.json` 也留在包外。`JEV_CUA_APP_ACCESS=all` 只放宽插件范围，不能代替系统/Sky 授权。确认新安装成功后再移除旧来源以免同名工具重复注册，不自动移动凭证或删除原包。
+密钥和应用范围配置应放在包外，通过 `JEV_CUA_ENV_FILE` 指定绝对路径，文件权限 600；相邻 `.apps.json` 与 `.access.json` 也留在包外。用户可通过 `/skill:jev-cua-access all|allowlist` 保存应用范围，显式授权文件优先于 JEV_CUA_APP_ACCESS 环境配置；只放宽插件范围，不能代替系统/Sky 授权。确认新安装成功后再移除旧来源以免同名工具重复注册，不自动移动凭证或删除原包。

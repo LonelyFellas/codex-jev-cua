@@ -4,3 +4,4 @@ runs/
 .env*
 !.env.example
 .DS_Store
+*.access.json*

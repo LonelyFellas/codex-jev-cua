@@ -166,7 +166,7 @@ test("config loads package env, enforces permissions and does not modify process
   const before = process.env.TYPESAFE_API_KEY;
   try {
     await writeFile(path, "TYPESAFE_API_KEY=synthetic-only\nJEV_CUA_ALLOWED_APPS=Calculator, TextEdit\n", { mode: 0o600 });
-    assert.deepEqual(loadPiConfig({}, path), { apiKey: "synthetic-only", allowedApps: ["Calculator", "TextEdit"], envFile: path, appAccess: "allowlist" });
+    assert.deepEqual(loadPiConfig({}, path), { apiKey: "synthetic-only", allowedApps: ["Calculator", "TextEdit"], envFile: path, appAccess: "allowlist", appAccessFile: `${path}.access.json`, appAccessSource: "default" });
     assert.equal(loadPiConfig({ TYPESAFE_API_KEY: "override" }, path).apiKey, "override");
     assert.equal(loadPiConfig({ JEV_CUA_MODE: "native" }, path).mode, "native");
     assert.equal(loadPiConfig({ JEV_CUA_MODE: "jev" }, path).mode, "jev");
