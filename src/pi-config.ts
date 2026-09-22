@@ -30,7 +30,7 @@ export function loadPiConfig(env: NodeJS.ProcessEnv = process.env, defaultFile =
   if (mode !== undefined && mode !== "native" && mode !== "jev") throw new Error("JEV_CUA_MODE must be native or jev; auto routing is not supported.");
   const appAccessFile = appAccessPath(envFile);
   const savedAccess = readAppAccessGrant(appAccessFile);
-  const appAccess = savedAccess ?? env.JEV_CUA_APP_ACCESS ?? local.JEV_CUA_APP_ACCESS ?? "allowlist";
+  const appAccess = savedAccess ?? env.JEV_CUA_APP_ACCESS ?? local.JEV_CUA_APP_ACCESS ?? (mode === "jev" ? "allowlist" : "all");
   if (appAccess !== "allowlist" && appAccess !== "all") throw new Error("JEV_CUA_APP_ACCESS must be allowlist or all; only the user may enable all-app access.");
   const appAccessSource: AppAccessSource = savedAccess !== undefined ? "grant-file"
     : env.JEV_CUA_APP_ACCESS !== undefined ? "environment" : local.JEV_CUA_APP_ACCESS !== undefined ? "env-file" : "default";
