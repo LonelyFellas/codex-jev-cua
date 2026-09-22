@@ -57,14 +57,16 @@ jobs:
       - name: Publish with npm OIDC (includes prepublishOnly gates)
         run: npm publish --access public --provenance --registry=https://registry.npmjs.org/
       - name: Confirm registry version
+        timeout-minutes: 10
         run: |
           version="$(node -p 'require("./package.json").version')"
-          for attempt in 1 2 3 4 5 6; do
-            published="$(npm view "jev-codex-cua@$version" version --registry=https://registry.npmjs.org/ 2>/dev/null || true)"
+          for ((attempt=1; attempt<=60; attempt++)); do
+            published="$(npm view "jev-codex-cua@$version" version --prefer-online --fetch-retries=0 --fetch-timeout=10000 --registry=https://registry.npmjs.org/ 2>/dev/null || true)"
             if [ "$published" = "$version" ]; then
               echo "Published jev-codex-cua@$version" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
+            echo "Registry version not yet confirmed ($attempt/60); publish will not be retried."
             sleep 10
           done
           echo "Publication returned but registry verification failed; inspect registry before retrying."
