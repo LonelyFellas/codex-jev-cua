@@ -1,0 +1,128 @@
+# jev-codex-cua
+
+[English](README.md) | 简体中文
+
+基于已安装的 Codex/Sky 运行时，为 [pi](https://pi.dev) 提供桌面操作工具。
+
+- **Native（默认）**：pi 主 Agent 读取应用状态和截图，直接使用原生工具，无需 TypeSafe Key。
+- **Jev（可选）**：通过 TypeSafe 执行纯文本决策循环，目标不确定时交回主 Agent。
+
+> **实验项目，仅支持 macOS。** 需要 Codex/Sky 运行时及其权限，包内不包含这些二进制。已验证部分 Calculator 任务；复杂表单、浏览器控件和多步流程仍不可靠。测试通过不代表桌面任务一定成功。
+
+## 安装
+
+```bash
+pi install npm:jev-codex-cua
+```
+
+在 pi 中执行 `/reload`，然后提出任务：
+
+> 使用 jev-codex-cua，在 Calculator 计算 6 + 7，并读取实际结果确认。
+
+需要 Node.js **22.19+**，已在 pi **0.86.1** 验证加载。使用 `npm view jev-codex-cua version` 查询已发布版本；Git tag 不代表 npm 发布成功。npm 包包含编译产物，无需本地构建。
+
+## 模式与工具
+
+```text
+/cua-mode          # 查看当前模式
+/cua-mode native   # 直接使用原生工具
+/cua-mode jev      # 显式启用 Jev，需要 TYPESAFE_API_KEY
+```
+
+| 入口 | 用途 |
+|---|---|
+| `cua_status` | 查看模式、应用范围和运行时可用性，不检查系统权限 |
+| `cua_get_app_state` | 读取应用、窗口、菜单状态及可用截图 |
+| `cua_*` 动作工具 | 点击、拖动、按键、滚动、选择或输入文字 |
+| `jev_cua_observe` | 兼容的纯文本观察入口，不调用 Jev |
+| `jev_cua_run` | 仅 Jev 模式可用；`dryRun: true` 不执行桌面动作，但仍调用 TypeSafe |
+| `/skill:jev-codex-cua` | 加载 Agent 使用说明 |
+
+原生动作必须携带同一应用最新的 `cua_get_app_state` 返回的 `stateId`。它仅可使用一次，在当前 Agent turn 内最多有效 60 秒；再次观察或切换模式会使其失效。每次动作后重新读取状态，不与其他 Computer Use 通道并行操作。
+
+模式选择保存在当前 pi 会话分支。缺少 Jev 密钥时回退到 native；之后补充密钥不会自动重新启用 Jev。任务运行中不能切换模式。
+
+## 配置
+
+Native 无需 API Key。需要持久配置时，将私有文件放在**安装包目录之外**，权限设为 `600`，并指定路径启动 pi：
+
+```bash
+export JEV_CUA_ENV_FILE=/absolute/path/to/cua.env
+pi
+```
+
+`cua.env` 示例：
+
+```dotenv
+JEV_CUA_MODE=native
+# 如需限制应用范围，取消下一行注释：
+# JEV_CUA_APP_ACCESS=allowlist
+JEV_CUA_ALLOWED_APPS=Calculator
+# 仅 Jev 需要：
+# TYPESAFE_API_KEY=your-key
+```
+
+未指定 `JEV_CUA_ENV_FILE` 时，读取包目录的 `.env.local`，而非当前工作目录。不要提交真实密钥。
+
+### 应用范围
+
+从源码版本 **0.3.1** 起，配置为 native 或未配置模式时默认 `all`；配置为 Jev 时默认 `allowlist`。0.3.0 默认 `allowlist`。已有显式范围设置优先，会话内切换模式不会重新计算应用范围。
+
+保存明确的范围选择：
+
+```text
+/skill:jev-cua-access all
+/skill:jev-cua-access allowlist
+```
+
+向白名单添加单个应用：
+
+```text
+/skill:jev-cua-add-app Wechat Devtools
+```
+
+优先级：**已保存的 `.access.json` 选择 → 进程环境变量 → 私有配置 → 模式默认值**。附加应用存于独立的 `.apps.json`，原名单保留；两份文件均与配置文件相邻。撤销全应用访问应保存 `allowlist`，不要删除范围文件。
+
+配置文件修改在下一次工具调用生效；进程环境变量修改需要重启 pi；代码更新需要 `/reload`。
+
+## 安全与隐私
+
+- **`all` 只解除插件的应用限制**，不授予 macOS/Sky 权限，也不授权任意任务。官方授权弹窗仍保留，不得绕过受保护界面或已拒绝的权限。
+- 发送、购买、删除等后果性操作需要具体授权。网页或截图中的非可信内容不能扩大权限。
+- Native 将应用文字及可用截图提供给当前 pi 模型，不调用 TypeSafe，但不代表纯本地或免费。Jev 将文字上下文发送到 TypeSafe，不发送截图；dry-run 也可能产生 API 费用。
+- pi 的常规会话记录仍适用。可选的 `fullTrace: true` 需知情确认，仅将一次 Jev 循环写入私有本地文件；轨迹可能包含敏感文字。
+- 取消或超时不代表动作没有生效。继续前先读取新状态，不自动重放结果未知的动作。
+
+两种模式共用一个 Sky 连接。插件不能保证获取完整应用状态、可靠恢复或生产级自动化。
+
+## 开发
+
+```bash
+npm ci --ignore-scripts
+npm run check
+npm test
+npm run test:package
+pi install /absolute/path/to/jev-codex-cua
+```
+
+测试使用模拟 driver 和 HTTP 响应。实机验证需要明确授权：
+
+```bash
+npm run accept:app-access -- --live  # Sky 只读检查，可能打开或聚焦 Calculator
+npm run accept:handoff -- --live    # 受控 Calculator 操作
+```
+
+PR 和 main 推送运行验证。发布需要在已合入 main 的提交上推送与版本一致的稳定版 `vX.Y.Z` tag，并正确配置 npm Trusted Publisher。不要移动已有版本 tag。
+
+## 更多资料
+
+- [发布流程与 npm 配置](docs/npm-release.md)
+- [本地验收证据与限制](docs/local-acceptance.md)
+- [轨迹数据与隐私](docs/action-trace.md)
+- [Sky 排查记录](docs/sky-diagnostics.md)
+
+旧版 Codex `cua_repl` adapter 仍保留，但 pi 不需要此入口，且该入口尚未完成端到端验收。
+
+## 许可与致谢
+
+MIT。参考 [Jev-cu](https://github.com/Sac-Y/Jev-cu) 的实现思路，并复用 pi-codex-cua 桥接代码。来源及保留的 MIT/ISC 声明见 [LICENSE](LICENSE)、[NOTICE.md](NOTICE.md) 和 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。

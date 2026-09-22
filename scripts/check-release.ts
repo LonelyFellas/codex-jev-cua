@@ -11,7 +11,7 @@ assert.equal(manifest.name, "jev-codex-cua");
 assert.equal(manifest.version, tag.slice(1), "Tag must match package.json version.");
 assert.equal(lock.version, manifest.version, "Lockfile version must match.");
 assert.equal(lock.packages?.[""]?.version, manifest.version, "Lockfile root package version must match.");
-assert.equal(manifest.repository?.url, "git+https://github.com/LonelyFellas/codex-jev-cua.git", "Repository must match the trusted publisher.");
+assert.equal(manifest.repository?.url, "git+https://github.com/LonelyFellas/jev-codex-cua.git", "Repository must match the trusted publisher.");
 assert.equal(manifest.publishConfig?.registry, "https://registry.npmjs.org/");
 assert.equal(manifest.publishConfig?.access, "public");
 assert.notEqual(manifest.private, true);

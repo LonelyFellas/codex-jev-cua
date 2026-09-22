@@ -17,7 +17,7 @@ CI 只使用 contents:read，缓存以 package-lock.json 为键的 npm 下载内
 `.github/workflows/publish.yml` 的文件名与 npm Trusted Publisher 绑定保持不变：
 - 推送 `v*` tag 才可能发布；发布检查只接受稳定版 `vX.Y.Z`，tag 必须与 package.json、package-lock.json 的版本一致。
 - tag 对应提交必须已经包含在 `origin/main`，不能从未合并的功能分支发行。
-- 只有官方仓库 `LonelyFellas/codex-jev-cua` 的 tag push 能进入发布 job。
+- 只有官方仓库 `LonelyFellas/jev-codex-cua` 的 tag push 能进入发布 job。
 - 发布 job 在 GitHub 托管的 Ubuntu runner 运行，Node 24，使用 npm Trusted Publishing / OIDC 和 provenance，不配置长期 npm token。
 - 只有发布 job 额外获得 id-token:write。不启用真实桌面或 TypeSafe 测试。
 - `npm publish` 正常执行 prepublishOnly 门禁，不跳过脚本。发布后查询 registry 验证版本，等待预算最多 10 分钟；查询可重试，发布本身不自动重试。npm 可能先接收包，再异步处理后才允许查询。
@@ -30,7 +30,7 @@ CI 只使用 contents:read，缓存以 package-lock.json 为键的 npm 下载内
 |---|---|
 | Provider | GitHub Actions |
 | Organization or user | `LonelyFellas` |
-| Repository | `codex-jev-cua` |
+| Repository | `jev-codex-cua` |
 | Workflow filename | `publish.yml`（不是完整路径） |
 | Environment | 留空（此 workflow 未绑定 environment） |
 | Allowed actions | 允许直接 `npm publish`，而非仅 staged publishing |
@@ -40,11 +40,17 @@ npm CLI >=11.15.0 也可通过官方命令管理，仍须账号持有人完成�
 ```bash
 npm trust list jev-codex-cua
 npm trust github jev-codex-cua \
-  --repo LonelyFellas/codex-jev-cua \
+  --repo LonelyFellas/jev-codex-cua \
   --file publish.yml --allow-publish
 ```
 
 先检查已有绑定；若存在不匹配的绑定，不自动撤销/替换，先确认维护者意图。不要将 token/OTP 粘贴到聊天、仓库或日志。初次绑定不等于已通过发布验证；必须确认 Actions 结果和 registry。参考 [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) 与 [npm trust](https://docs.npmjs.com/cli/v11/commands/npm-trust/)。
+
+## 仓库改名后的发布修复
+
+仓库已改名为 `LonelyFellas/jev-codex-cua`。`v0.3.1` 的发布 job 因旧仓库名条件而被跳过，未发布 npm；保留该 tag，不移动或覆盖，修复版本使用 `0.3.2`。
+
+发布前须由账号持有人确认 npm Trusted Publisher 的 Repository 也已更新为 `jev-codex-cua`，Workflow filename 保持 `publish.yml`。仅修改 GitHub 工作流和 package.json 不会自动更新 npm 绑定。若 `npm trust list` 要求二次验证，应完成官方验证，不在聊天或日志中提供 OTP/token。
 
 ## 每次发版
 
