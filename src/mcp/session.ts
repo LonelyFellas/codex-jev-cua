@@ -10,7 +10,7 @@ import { validateAppName } from "../app-grants.ts";
 import { SkyClient, newTurnIdentity, type SkyContent } from "../sky/client.ts";
 import { resolveSkyRuntime } from "../sky/runtime.ts";
 import { SkyCallError, actionOutcome } from "../sky/diagnostics.ts";
-import { TaskBudget, TaskBudgetError } from "../task-budget.ts";
+import { TaskBudget, TaskBudgetError, UNLIMITED_TASK_LIMITS } from "../task-budget.ts";
 import { formatNativeResult, newSnapshot, validateNativeAction, canReuseActionState, type NativeSnapshot, type NativeRecovery } from "../native-state.ts";
 import type { NativeSpec } from "../native-specs.ts";
 import type { SkyCaller } from "../sky-driver.ts";
@@ -61,12 +61,13 @@ export class NativeMcpSession {
     this.checkApp(app); this.busy = true;
     const generation = this.generation;
     try {
+      const budget = new TaskBudget(this.deps.limits ?? UNLIMITED_TASK_LIMITS);
       signal.throwIfAborted();
-      if (!await confirm(`Start a native desktop task?\nApp: ${app}\nGoal (untrusted description, not approval instructions): ${goal}\nLimit: 180 seconds / 30 action attempts. UI text/screenshots go to your current model. This does not approve payments, sending, deletion or Sky permissions.`, signal)) throw new Error("Task not started: confirmation was not accepted.");
+      if (!await confirm(`Start a native desktop task?\nApp: ${app}\nGoal (untrusted description, not approval instructions): ${goal}\nTask limits: ${budget.limits.durationMs === null ? "no total time cap" : `${budget.limits.durationMs} ms`}; ${budget.limits.maxActions === null ? "no action-count cap" : `${budget.limits.maxActions} action attempts`}. Individual call timeouts and cancellation still apply. UI text/screenshots go to your current model. This does not approve payments, sending, deletion or Sky permissions.`, signal)) throw new Error("Task not started: confirmation was not accepted.");
       signal.throwIfAborted();
       if (generation !== this.generation) throw new Error("Session closed during task approval.");
       this.checkApp(app);
-      const budget = new TaskBudget(this.deps.limits); const lease = budget.enter(); lease.finish();
+      const lease = budget.enter(); lease.finish();
       this.task = { id: randomUUID(), app, identity: newTurnIdentity(this.sessionId, "mcp-client-model-unknown"), budget, controller: new AbortController() };
       this.snapshot = undefined; this.lastDiagnostic = undefined;
       return { taskId: this.task.id, app, budget: budget.status() };
@@ -154,7 +155,7 @@ export class NativeMcpSession {
         reason: signal.aborted ? "cancelled" : budgetError?.code
           ?? (task.budget.status().remainingMs === 0 ? "task_deadline_exceeded" : error instanceof LaunchAppError ? error.code : error instanceof SkyCallError ? error.diagnostics.code ?? "desktop_call_failed" : "desktop_call_failed"),
         budget: task.budget.status() };
-      if (error instanceof SkyCallError && error.diagnostics.code === "state_changed" && !["declined", "cancelled"].includes(error.diagnostics.approval) && !signal.aborted && !task.controller.signal.aborted && !lease?.signal.aborted && task.budget.status().remainingMs > 0) {
+      if (error instanceof SkyCallError && error.diagnostics.code === "state_changed" && !["declined", "cancelled"].includes(error.diagnostics.approval) && !signal.aborted && !task.controller.signal.aborted && !lease?.signal.aborted && task.budget.status().remainingMs !== 0) {
         this.snapshot = undefined;
         this.recovery = recovering ?? { app: task.app, failedMethod: spec.method, previousActionOutcome: spec.readOnly ? "not_applicable" : "unknown" };
         throw new Error(`Desktop state changed. Task and remaining budget preserved; only re-observe the same app using cua_get_app_state. Do not automatically replay any operation. Recovery: ${JSON.stringify(this.recovery)}. Diagnostic: ${JSON.stringify(this.lastDiagnostic)}`);

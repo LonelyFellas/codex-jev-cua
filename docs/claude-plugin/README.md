@@ -49,6 +49,12 @@ Agent 先以准确应用名或 Bundle ID 建立任务，在一次任务确认后
 
 pi native 同步提供相同恢复及 `cua_launch_app`，但 pi 安装与 Claude Plugin 独立。发布后需单独 `pi update npm:jev-codex-cua` 并 `/reload`；固定旧版本的安装应显式安装新版本。pi 不使用 MCP taskId，而是沿用本轮预算。
 
+## 0.7.1：仅 native 取消任务总量限制
+
+pi native 与 Claude MCP 不再受 180 秒总时长和 30 次动作次数限制。耗时和次数继续记录；budget 中 durationMs/maxActions/remainingMs/remainingActions 为 null 表示无上限，而不是预算耗尽。Jev 仍保留原预算，模式切换不会重置本轮已累计时间/次数。
+
+单次调用及确认等待超时、用户取消、同应用任务范围、stateId 时效、系统/Sky 授权、未知结果禁止重放均不改变。更新后不需要重新授予 all，也不应为绕过拒绝或单次请求失败切模式/重启任务。通过 /plugin 更新并重启 Claude；pi 独立更新包并 /reload。
+
 ## 从手动安装迁移
 
 先核对 `/mcp` 和旧服务器的来源、scope、自定义环境变量。经用户确认后禁用/移除旧 Deskhand MCP，再安装 Plugin，避免两个实例。自定义 `DESKHAND_CONFIG_FILE` 等设置需要用户按 Claude 支持的配置方式保留，不能静默丢弃或复制。默认授权文件仍位于原来的 `~/.config/deskhand/`，无需搬迁。

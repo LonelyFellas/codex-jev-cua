@@ -49,7 +49,7 @@ pi install npm:jev-codex-cua
 
 启动应用不需要旧状态，启动后须观察窗口，不能把启动受理当作就绪。其他原生 UI 动作必须携带同一应用最新状态的 `stateId`，来自 `cua_get_app_state` 或通过完整结构检查的动作返回。它仅可使用一次，在当前 Agent turn 内最多有效 60 秒；再次观察或切换模式会使其失效。动作返回新 stateId 时，检查该状态后可直接继续；否则重新读取。不与其他 Computer Use 通道并行操作。
 
-Native/Jev 在同一 Agent turn 内共用 **180 秒/30 次动作尝试**硬预算，包含规划间隔与官方授权等待；切模式或重连不续期。`cua_status` 返回剩余预算和最近调用诊断。详见[结果分类、分段耗时与状态复用](docs/native-diagnostics/README.md)。
+0.7.1 起，pi 与 Claude MCP 的 **native 不设任务总时长或动作次数上限**；Jev 仍保留本轮 **180 秒/30 次动作尝试**预算。切模式不清零耗时和动作计数。单次调用超时、用户取消、状态时效和授权检查不变。`cua_status` 用 `null` 表示无限制的上限/剩余额度，仍记录耗时、动作数和最近诊断。详见[结果分类、分段耗时与状态复用](docs/native-diagnostics/README.md)。
 
 模式选择保存在当前 pi 会话分支。缺少 Jev 密钥时回退到 native；之后补充密钥不会自动重新启用 Jev。任务运行中不能切换模式。
 

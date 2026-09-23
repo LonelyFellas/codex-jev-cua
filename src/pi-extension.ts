@@ -11,7 +11,7 @@ import { SkyClient, newTurnIdentity } from "./sky/client.ts";
 import { resolveSkyRuntime } from "./sky/runtime.ts";
 import { registerNativeTools, nativeToolNames, nativeActionNames } from "./native-tools.ts";
 import { formatNativeResult, newSnapshot, validateNativeAction, canReuseActionState } from "./native-state.ts";
-import { TaskBudget, TaskBudgetError } from "./task-budget.ts";
+import { TaskBudget, TaskBudgetError, DEFAULT_TASK_LIMITS, UNLIMITED_TASK_LIMITS } from "./task-budget.ts";
 import { SkyCallError, actionOutcome } from "./sky/diagnostics.ts";
 import type { NativeSnapshot, NativeRecovery } from "./native-state.ts";
 import { launchApp, launchArguments, LaunchAppError, type AppIdentityType } from "./launch-app.ts";
@@ -49,7 +49,7 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
   let mode: CuaMode | undefined;
   let modeReason: string | undefined;
   let handoff: { appName: string; goal: string; remainingSteps: number } | undefined;
-  let budget = new TaskBudget(deps.budgetLimits);
+  let budget = new TaskBudget(deps.budgetLimits ?? UNLIMITED_TASK_LIMITS);
   let lastDiagnostic: Record<string, unknown> | undefined;
   let recovery: NativeRecovery | undefined;
   let launchBlocked = false;
@@ -61,6 +61,9 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
       ...(mode === "jev" ? ["jev_cua_run"] : [])];
     pi.setActiveTools([...pi.getActiveTools().filter((name) => !ownedNames.has(name)), ...enabled]);
   }
+  function updateBudgetMode() {
+    if (!deps.budgetLimits && !active) budget.setLimits(mode === "jev" ? DEFAULT_TASK_LIMITS : UNLIMITED_TASK_LIMITS);
+  }
   function resolveMode(config: PiConfig): CuaMode {
     mode ??= config.mode ?? "native";
     if (mode === "jev" && !config.apiKey) {
@@ -69,6 +72,7 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
       pi.appendEntry(MODE_ENTRY, { mode, reason: modeReason });
       refreshTools();
     }
+    updateBudgetMode();
     return mode;
   }
   function currentTurn(ctx: ExtensionContext): TurnIdentity {
@@ -130,7 +134,7 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
         (message, approvalSignal) => ctx.hasUI ? ctx.ui.confirm("官方 Computer Use 授权", message, { signal: approvalSignal }) : Promise.resolve(false));
     } catch (error) {
       snapshot = undefined;
-      if (recoveryCall && error instanceof SkyCallError && error.diagnostics.code === "state_changed" && !["declined", "cancelled"].includes(error.diagnostics.approval) && !combined.aborted && budget.status().remainingMs > 0) {
+      if (recoveryCall && error instanceof SkyCallError && error.diagnostics.code === "state_changed" && !["declined", "cancelled"].includes(error.diagnostics.approval) && !combined.aborted && budget.status().remainingMs !== 0) {
         recovery ??= { app: recoveryCall.app, failedMethod: recoveryCall.method,
           previousActionOutcome: recoveryCall.readOnly ? "not_applicable" : "unknown" };
       } else {
@@ -158,7 +162,7 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
       ...(handoff ? { nativeHandoff: handoff } : {}) };
   }
   for (const name of ["cua_status", "jev_cua_status"]) {
-    pi.registerTool({ name, label: "CUA status", description: "Check native/jev mode, plugin app-access scope/source and dedicated grant-file path, credential presence and runtime paths. Does not check or grant system/Sky permissions. No network, screenshots or desktop actions. Never exposes the key.",
+    pi.registerTool({ name, label: "CUA status", description: "Check native/jev mode, plugin app-access scope/source and dedicated grant-file path, credential presence and runtime paths. Does not check or grant system/Sky permissions. No network, screenshots or desktop actions. Never exposes the key. Native task limits and remaining caps are null (unlimited); elapsed time and actions are still tracked. Jev retains finite limits.",
       parameters: Type.Object({}, { additionalProperties: false }), executionMode: "sequential", async execute() { return output(status()); } });
   }
   pi.registerCommand("jev-cua-status", { description: "检查双模式配置，不联网、不显示密钥", async handler(_args, ctx) {
@@ -178,6 +182,7 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
     modeReason = requested === "jev" && !config.apiKey ? "missing_jev_key" : undefined;
     snapshot = undefined; handoff = undefined; turn = undefined;
     pi.appendEntry(MODE_ENTRY, { mode, ...(modeReason ? { reason: modeReason } : {}) });
+    updateBudgetMode();
     refreshTools();
     notify(modeReason ? "缺少 TypeSafe Key，保持 native。配置好后请再次 /cua-mode jev，不会自动启用 Jev。"
       : mode === "native" ? "已切换 native：主 Agent 直接操作，不调用 Jev/TypeSafe。请重新读取应用状态。"
@@ -332,7 +337,7 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
     },
   });
   pi.on("session_start", (_event, ctx) => {
-    dispose(); mode = undefined; modeReason = undefined; budget = new TaskBudget(deps.budgetLimits); lastDiagnostic = undefined; recovery = undefined; launchBlocked = false;
+    dispose(); mode = undefined; modeReason = undefined; budget = new TaskBudget(deps.budgetLimits ?? UNLIMITED_TASK_LIMITS); lastDiagnostic = undefined; recovery = undefined; launchBlocked = false;
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type === "custom" && entry.customType === MODE_ENTRY && entry.data && typeof entry.data === "object" && "mode" in entry.data) {
         const saved = entry.data.mode;
@@ -343,7 +348,7 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
     refreshTools();
   });
   pi.on("agent_start", (_event, ctx) => {
-    budget = new TaskBudget(deps.budgetLimits); lastDiagnostic = undefined; recovery = undefined; launchBlocked = false;
+    budget = new TaskBudget(deps.budgetLimits ?? UNLIMITED_TASK_LIMITS); updateBudgetMode(); lastDiagnostic = undefined; recovery = undefined; launchBlocked = false;
     turn = newTurnIdentity(ctx.sessionManager.getSessionId(), ctx.model?.id ?? "unknown", ctx.thinkingLevel);
     snapshot = undefined; handoff = undefined; refreshTools();
   });

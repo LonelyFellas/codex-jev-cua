@@ -144,7 +144,7 @@ Skill 保存选择后会再读 `cua_status`，应显示 `appAccess=all`、`appAc
 ## 授权与预算
 
 - MCP 没有 pi 的 agent turn 事件；使用显式 taskId，绑定一个具体应用。
-- 每个任务 180 秒/30 次动作尝试，从任务确认完成开始；Sky 官方授权等待、模型规划和工具间隔均计入。调用前检查时间，调用中超时取消并关闭连接。
+- 0.7.1 起 native 任务不设总时长或动作次数上限，从任务确认完成开始累计耗时和动作数但不因达到 180 秒/30 次动作而停止。单次 Sky 调用/启动/确认请求的超时及用户取消仍有效。状态中的 durationMs/maxActions/remainingMs/remainingActions 为 null 表示无对应上限。
 - 活动任务不能被 begin 覆盖。任务失败、拒绝、取消或结果未知时销毁任务和旧状态；不能自动重放。后续新任务必须再次经过人确认，不可靠模型自动续期。
 - 开始任务的确认不是 Sky 官方批准，也不是删除/发送/支付的具体授权。后果性操作仍由 Claude 获取具体用户授权。
 - 没有 form elicitation 能力的客户端无法开始任务；不提供 `approved=true`、无交互自动批准或 URL 授权旁路。不要配置自动批准 elicitation 的 hooks 来跳过这些用户确认。
