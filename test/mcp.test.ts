@@ -122,12 +122,19 @@ test("MCP config stays native, uses an independent path and preserves explicit a
   const home = mkdtempSync(join(tmpdir(), "deskhand-mcp-config-"));
   try {
     const base = nativeConfig({ JEV_CUA_ENV_FILE: "/do/not/read/pi.env", JEV_CUA_MODE: "jev" }, home);
-    assert.equal(base.appAccess, "allowlist"); assert.equal(base.mode, "native");
+    assert.equal(base.appAccess, "all"); assert.equal(base.mode, "native");
+    assert.equal(base.appAccessSource, "default");
+    assert.equal(nativeConfig({ JEV_CUA_APP_ACCESS: "allowlist" }, home).appAccess, "allowlist");
     assert.equal(base.envFile, join(home, ".config/deskhand/cua.env"));
     const path = join(home, "native.env");
     writeFileSync(path, "JEV_CUA_APP_ACCESS=all\nJEV_CUA_MODE=jev\nTYPESAFE_API_KEY=synthetic\n", { mode: 0o600 });
     const all = nativeConfig({ DESKHAND_CONFIG_FILE: path }, home);
     assert.equal(all.appAccess, "all"); assert.equal(all.apiKey, undefined); assert.equal(all.mode, "native");
+    writeFileSync(path, "JEV_CUA_APP_ACCESS=allowlist\n", { mode: 0o600 });
+    assert.equal(nativeConfig({ DESKHAND_CONFIG_FILE: path }, home).appAccess, "allowlist");
+    writeFileSync(path + ".access.json", JSON.stringify({ version: 1, appAccess: "allowlist" }), { mode: 0o600 });
+    const restricted = nativeConfig({ DESKHAND_CONFIG_FILE: path, JEV_CUA_APP_ACCESS: "all" }, home);
+    assert.equal(restricted.appAccess, "allowlist"); assert.equal(restricted.appAccessSource, "grant-file");
     assert.throws(() => nativeConfig({ DESKHAND_CONFIG_FILE: join(home, "missing") }, home));
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

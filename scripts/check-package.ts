@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -53,7 +53,20 @@ try {
     assert.equal((await mcp.listTools()).tools.length, 13);
     const status = await mcp.callTool({ name: "cua_status", arguments: {} });
     assert.equal(status.isError, undefined);
-    assert.equal(JSON.parse((status.content as { text: string }[])[0]!.text).mode, "native");
+    const state = JSON.parse((status.content as { text: string }[])[0]!.text);
+    assert.equal(state.mode, "native");
+    assert.equal(state.accessManagement.version, 1);
+    assert.equal(state.accessManagement.cliPath, realpathSync(join(installed, "dist/mcp/access.js")));
+    assert.ok(entries.includes("package/claude-skills/deskhand-access/SKILL.md"));
+    const changed = JSON.parse(execFileSync(process.execPath, [state.accessManagement.cliPath, "all", "--config", state.envFile, "--expected-file", state.appAccessFile], { encoding: "utf8" }));
+    assert.equal(changed.appAccess, "all");
+    const updated = await mcp.callTool({ name: "cua_status", arguments: {} });
+    assert.equal(JSON.parse((updated.content as { text: string }[])[0]!.text).appAccessSource, "grant-file");
+    const skillConfig = join(consumer, "claude-test");
+    const installedSkill = JSON.parse(execFileSync(process.execPath, [join(installed, "dist/mcp/install-access-skill.js"), "--install"],
+      { encoding: "utf8", env: { ...process.env, CLAUDE_CONFIG_DIR: skillConfig } }));
+    assert.equal(installedSkill.path, join(skillConfig, "skills/deskhand-access/SKILL.md"));
+    assert.match(readFileSync(installedSkill.path, "utf8"), /disable-model-invocation: true/);
     const blocked = await mcp.callTool({ name: "cua_task_begin", arguments: { app: "Calculator", goal: "synthetic no-approval test" } });
     assert.equal(blocked.isError, true, "Headless client without elicitation must never start Sky.");
   } finally { await mcp.close(); await transport.close(); }
