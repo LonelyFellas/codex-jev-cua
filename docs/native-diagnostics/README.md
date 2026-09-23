@@ -19,6 +19,16 @@
 
 Jev `runTask` 结果增加 `diagnostic`：当 driver 动作调用返回成功、但后续独立 observe 失败时，保留 `actionOutcome=call_returned` 和 `observationOutcome=unavailable`。旧 `outcomeUnknown` 仍表示最终效果未知，不能据此重放。
 
+## 通用状态变化恢复
+
+0.7.0 起，pi native 与 Claude MCP 对明确的 `state_changed` 采用相同流程，不依赖应用名称、联系人或输入框类型：
+
+1. 使旧 stateId 失效，保留原任务及剩余预算，`cua_status.recovery` 记录 app、failedMethod 和 previousActionOutcome。
+2. 此时仅允许对原应用 `cua_get_app_state`，不允许动作、应用启动或跨应用发现。再次遇到 state_changed 仍保留最初失败操作，不重置预算。
+3. 成功取得新状态后解除只读限制，但新状态不能证明原操作成功或失败。Agent 须核对实际界面后选择下一步，无法确认则询问用户，不自动重放操作。
+
+官方拒绝/取消、请求取消、预算到期和其他底层错误仍停止，不通过恢复规避。恢复只是重新观察，不保证任意 UI 操作能自动判定完成；未加入产品专属判断逻辑。
+
 ## 少一次重复读取
 
 首次调用 `cua_get_app_state`。动作返回只有同时满足以下条件，才会签发**新** stateId：

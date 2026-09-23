@@ -1,6 +1,6 @@
 {
   "name": "jev-codex-cua",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "license": "MIT",
   "description": "Experimental Codex Sky desktop tools: native MCP for Claude Code, plus pi native/optional Jev modes",
   "repository": {

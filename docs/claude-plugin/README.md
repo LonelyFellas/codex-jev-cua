@@ -31,6 +31,24 @@ Plugin 的 MCP 启动配置固定绑定同版本 npm 包，由 npx 获取依赖�
 
 验收时用 Calculator 只读任务：确认弹窗没有复选框，点击一次 Accept 后任务能开始；Sky 若单独申请则另行正常确认；Decline/Cancel 应停止。自动化覆盖真实 MCP 协议握手和模拟客户端返回，不代替用户在 Claude 界面的手动确认验收。
 
+## 0.7.0：主动打开任意已安装应用
+
+用户可直接说“打开微信并读取窗口”“打开飞书”或“打开 Safari”。新增 `cua_launch_app`，不是仅支持预设的几款应用；`all` 下可针对任何已安装、已注册应用，显式 allowlist 下仍须与名单及当前任务一致。
+
+Agent 先以准确应用名或 Bundle ID 建立任务，在一次任务确认后调用启动工具，再用 Sky 读取状态验证。例如任务 app 为 `WeChat` 时传 `identityType=name`；任务 app 为 `com.tencent.xinWeChat` 时传 `identityType=bundleId`。用户无需手写参数，但本地化别名与注册名称不一致时需要先识别实际应用，不应把名称识别失败说成系统权限不足。
+
+启动由 macOS LaunchServices 完成，会打开/激活应用，计入一次动作；不需要已有窗口或 stateId。返回只说明系统接受启动请求，不保证窗口就绪；旧 stateId 失效，必须重新观察。只读请求不自动启动，Sky 拒绝或未知结果不自动换路径重试。工具不接受 URL、文件、脚本或额外启动参数，不安装应用、不修改系统权限。
+
+发布后通过 `/plugin` 更新并重启。先用“打开 Calculator 并只读取窗口，不点击、不输入”验收，确认既能启动也能观察；本版本仍需真实桌面验收，自动化仅模拟启动，不会打开用户应用。
+
+## 通用 state_changed 恢复
+
+0.7.0 的 native 调用遇到 `state_changed` 时，不再直接结束整个任务：旧状态失效，原 taskId 与剩余时间/动作预算保留，状态显示 `recovery`。此时仅允许同应用的 `cua_get_app_state`；不自动启动、点击、输入或重新发送失败操作。成功读取后，Agent 先核对当前可见结果，再选择必要的新动作；结果无法确认时询问用户。此机制适用于所有应用，不包含飞书、微信或聊天场景专用逻辑。
+
+取消、官方拒绝、超时或其他底层错误仍停止；重新观察不会恢复已耗尽预算。新状态只证明观察成功，不证明上次写操作成功或失败。
+
+pi native 同步提供相同恢复及 `cua_launch_app`，但 pi 安装与 Claude Plugin 独立。发布后需单独 `pi update npm:jev-codex-cua` 并 `/reload`；固定旧版本的安装应显式安装新版本。pi 不使用 MCP taskId，而是沿用本轮预算。
+
 ## 从手动安装迁移
 
 先核对 `/mcp` 和旧服务器的来源、scope、自定义环境变量。经用户确认后禁用/移除旧 Deskhand MCP，再安装 Plugin，避免两个实例。自定义 `DESKHAND_CONFIG_FILE` 等设置需要用户按 Claude 支持的配置方式保留，不能静默丢弃或复制。默认授权文件仍位于原来的 `~/.config/deskhand/`，无需搬迁。

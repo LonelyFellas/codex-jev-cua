@@ -139,7 +139,7 @@ Skill 保存选择后会再读 `cua_status`，应显示 `appAccess=all`、`appAc
 4. `cua_*({taskId, app, stateId, ...})`：操作。每个 stateId 单次使用；完整验证后的动作返回可提供新的 stateId，否则重新读取。
 5. 核对实际状态后 `cua_task_end({taskId})`。结束不代表成功，也不会撤销动作。
 
-13 个工具：status、task_begin、task_end，以及现有 10 个 native 观察/操作工具。截图作为 MCP image content 返回，不通过单独文件或外部服务传输。模型供应商仍可看到这些内容，遵守 Claude 会话隐私策略。
+0.7.0 起有 14 个工具：status、task_begin、task_end、launch_app，以及现有 10 个 native 观察/操作工具。用户明确要求打开应用时，先在已确认任务中用 `cua_launch_app` 按准确应用名称或 Bundle ID 启动/激活，再读取窗口；不要求用户手动打开。启动不保证窗口已就绪，也不替代 Sky/系统权限。截图作为 MCP image content 返回，不通过单独文件或外部服务传输。模型供应商仍可看到这些内容，遵守 Claude 会话隐私策略。
 
 ## 授权与预算
 

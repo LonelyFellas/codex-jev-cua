@@ -50,7 +50,9 @@ try {
     env: { PATH: process.env.PATH ?? "", HOME: consumer, DESKHAND_CONFIG_FILE: mcpConfig }, stderr: "pipe" });
   try {
     await mcp.connect(transport);
-    assert.equal((await mcp.listTools()).tools.length, 13);
+    const mcpTools = (await mcp.listTools()).tools;
+    assert.equal(mcpTools.length, 14);
+    assert.ok(mcpTools.some(tool => tool.name === "cua_launch_app"));
     const status = await mcp.callTool({ name: "cua_status", arguments: {} });
     assert.equal(status.isError, undefined);
     const state = JSON.parse((status.content as { text: string }[])[0]!.text);
@@ -111,7 +113,7 @@ try {
     decide: async () => ({ action: "click_element", targetIndex: 1, confidence: 1, done: 0, risk: 0 }),
   });
   assert.equal(result.status, "dry_run");
-  console.log(`Package verification passed: ${manifest.name}@${manifest.version}; 14 registered tools, 3 skills, mode command, compiled API, access CLI and native MCP stdio without pi installed, no consumer dev dependencies.`);
+  console.log(`Package verification passed: ${manifest.name}@${manifest.version}; 15 registered tools, 3 skills, mode command, compiled API, access CLI and native MCP stdio without pi installed, no consumer dev dependencies.`);
   console.log("No API calls, desktop actions, global pi settings changes or npm publication occurred.");
 } finally {
   rmSync(temporary, { recursive: true, force: true });

@@ -52,7 +52,7 @@ test("MCP handshake advertises only native tools, validates args and forwards ex
   const decode = (r: Awaited<ReturnType<typeof call>>) => JSON.parse((r.content as { text: string }[])[0]!.text);
   try {
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 13); assert.ok(!JSON.stringify(tools).includes('"name":"jev_cua_run"'));
+    assert.equal(tools.tools.length, 14); assert.ok(!JSON.stringify(tools).includes('"name":"jev_cua_run"'));
     assert.equal(decode(await call("cua_status")).mode, "native"); assert.equal(f.calls.length, 0);
     assert.equal((await call("cua_click", { app: "Calculator", stateId: "invented", element_index: 1 })).isError, true);
     assert.equal((await call("cua_task_begin", { app: "Calculator", goal: "6", approved: true })).isError, true);

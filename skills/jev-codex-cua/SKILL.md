@@ -12,12 +12,20 @@ description: 单包双模式桌面操作：默认 native，由 pi 主 Agent 直�
 
 ## Native：主 Agent 直接操作
 
-- 使用 `cua_list_apps` 仅查找尚不能确定的应用名。
-- 先 `cua_get_app_state({app})` 读取最新原生状态和可用截图，获取 stateId。菜单根/局部 AX 也可返回，不能假称一定是完整页面。
+- 使用 `cua_list_apps` 仅查找尚不能确定的应用身份。使用准确注册名称或 Bundle ID；中文称呼不一定是 Sky 可识别的名称，`Invalid app` 不等于权限不足。
+- 用户明确要求打开应用时，先 `cua_launch_app({app, identityType:"name"|"bundleId"})`，再读取窗口。支持任意已安装应用，受 appAccess/allowedApps 约束，不需要用户手动打开。启动无须已有 stateId，但会使旧 stateId 失效并消耗一次动作预算；不返回 UI 状态、不代表窗口已就绪。此工具仅在 native 模式可用，不作为 Jev 拒绝后的接管或自动切模式路径。只读请求不自动启动；拒绝、取消、失败后不能用启动绕行。
+- 对已打开的应用，先 `cua_get_app_state({app})` 读取最新原生状态和可用截图，获取 stateId。菜单根/局部 AX 也可返回，不能假称一定是完整页面。
 - 动作必须携带该应用的 stateId 和当前元素编号。stateId 仅本 turn 内 60 秒有效，任何动作尝试后即消费；模式切换、其他观测、异常或 agent 结束会失效。
 - 动作工具：`cua_click`、`cua_drag`、`cua_perform_secondary_action`、`cua_press_key`、`cua_scroll`、`cua_select_text`、`cua_set_value`、`cua_type_text`。
 - 优先索引；坐标需要对应状态的截图，不能猜位置或沿用旧截图。动作返回若含**新的 stateId**，表示已通过完整窗口结构、同应用进程与截图校验：先检查该返回状态，可直接使用其新索引继续，不必重复读取。没有新 stateId 则调用 `cua_get_app_state`。`call_returned` 不是任务成功，仍须核对实际结果。
 - 已明确要求的搜索、导航、计算等相关步骤不额外逐次确认。后果性操作必须有具体授权；不把泛泛的“直接操作”当作删除/发送/购买的无限授权。
+
+## 通用界面变化恢复（任何应用）
+
+- `state_changed` 表示旧窗口状态不可继续使用，不证明刚才的动作未执行，也不等于用户拒绝。工具会使旧 stateId 失效、保留剩余预算，在 `cua_status.recovery` 标明原应用、失败方法和动作结果。
+- recovery 未清除时只允许同一应用的 `cua_get_app_state`；不要启动应用、跨应用、切通道或重放动作。再次发生状态变化仍保持只观察状态，不刷新时间/动作预算。
+- 成功返回新状态后，先检查任意应用当前可见结果（例如焦点、选中项、字段值、页面变化或完成状态），判断原操作是否生效，再选择必要的新动作。新 stateId 本身不证明上次成功/失败；不使用产品特定规则猜测结果。
+- 若无法判断，停止写操作并询问用户；禁止盲目重复输入、提交、删除或发送。授权拒绝/取消、超时和其他未知错误不会因此获得继续动作的权限。
 
 ## Jev：可选短程决策
 
