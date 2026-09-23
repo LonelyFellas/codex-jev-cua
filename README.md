@@ -38,7 +38,9 @@ Node.js **22.19+** is required. The package has been load-tested with pi **0.86.
 | `jev_cua_run` | Jev-only loop; `dryRun: true` previews without desktop actions, but still calls TypeSafe |
 | `/skill:jev-codex-cua` | Load the agent's usage instructions |
 
-Native actions require a fresh `stateId` from `cua_get_app_state` for the same app. A token is single-use, lasts at most 60 seconds within the current agent turn, and is invalidated by another observation or a mode change. Re-read state after every action. Do not run other computer-use channels in parallel.
+Native actions require a fresh `stateId` for the same app, from `cua_get_app_state` or a validated full action-returned observation. Tokens remain single-use, valid for 60 seconds within the current agent turn, and invalidated by another observation or mode change. If an action returns a NEW stateId, inspect that state and continue without a duplicate read; otherwise observe again. Do not run other computer-use channels in parallel.
+
+Native/Jev share a hard **180-second / 30-action-attempt** budget per agent turn, including inter-call gaps and official approval wait. Mode changes and reconnections do not renew it. `cua_status` exposes the remaining budget and last diagnostic. See [outcomes, timings and state reuse (Chinese)](docs/native-diagnostics/README.md).
 
 Mode choices persist in the current pi session branch. Missing Jev credentials cause fallback to native; adding a key later does not silently re-enable Jev. Mode changes are refused while a task is running.
 
@@ -120,6 +122,7 @@ Detailed engineering notes are currently in Chinese:
 
 - [Release and npm setup](docs/npm-release.md)
 - [Local acceptance evidence and limitations](docs/local-acceptance.md)
+- [Fixed desktop task benchmark: protocol, recording and metrics (Chinese)](docs/benchmark/README.md) — source-checkout tooling; no automatic desktop execution.
 - [Trace data and privacy](docs/action-trace.md)
 - [Sky troubleshooting](docs/sky-diagnostics.md)
 

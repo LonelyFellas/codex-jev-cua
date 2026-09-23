@@ -153,6 +153,7 @@ test("action errors are not retried and indicate unknown outcome", async () => {
   assert.equal(result.status, "error");
   assert.equal(result.reason, "execute_failed");
   assert.equal(result.outcomeUnknown, true);
+  assert.equal(result.diagnostic?.actionOutcome, "unknown");
   assert.equal(clicks, 1);
   assert.ok(!JSON.stringify(result).includes("secret input"));
 });
@@ -163,6 +164,8 @@ test("post-action observation failure stops without retrying action", async () =
   assert.equal(result.reason, "post_action_observe_failed");
   assert.equal(result.steps, 1);
   assert.equal(result.outcomeUnknown, true);
+  assert.equal(result.diagnostic?.actionOutcome, "call_returned");
+  assert.equal(result.diagnostic?.observationOutcome, "unavailable");
 });
 test("planner resources callback runs once per decision", async () => {
   let called = 0;

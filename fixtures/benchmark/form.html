@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; form-action 'none'">
+<title>Deskhand 本地基准表单</title>
+<style>body{font:20px system-ui;max-width:680px;margin:48px auto;padding:24px}label,button,output{display:block;margin:20px 0}input,select,button{font:inherit}output{min-height:32px}</style>
+<h1>Deskhand 本地基准表单</h1>
+<p>仅本地测试，不发送任何数据。刷新页面重置。</p>
+<label>姓名 <input id="name" autocomplete="off"></label>
+<label>方案 <select id="plan"><option>Basic</option><option>Team</option></select></label>
+<label><input id="agree" type="checkbox">同意测试</label>
+<button id="preview" type="button">生成预览</button>
+<output id="result" aria-live="polite"></output>
+<hr>
+<button id="load" type="button">加载详情</button>
+<p id="loading" role="status"></p>
+<section id="details" hidden>
+<label>详情码 <input id="code" autocomplete="off"></label>
+<button id="verify" type="button">验证详情</button>
+</section>
+<output id="detail-result" aria-live="polite"></output>
+<script>
+const el = (id) => document.getElementById(id);
+el('preview').onclick = () => {
+  el('result').textContent = `${el('name').value} | ${el('plan').value} | ${el('agree').checked ? 'agreed' : 'not agreed'}`;
+};
+el('load').onclick = () => {
+  el('load').disabled = true;
+  el('loading').textContent = '正在加载详情…';
+  setTimeout(() => { el('details').hidden = false; el('loading').textContent = '详情已加载'; }, 1500);
+};
+el('verify').onclick = () => { el('detail-result').textContent = el('code').value === 'READY' ? 'Details verified' : 'Invalid code'; };
+</script>
+</html>

@@ -38,7 +38,9 @@ pi install npm:jev-codex-cua
 | `jev_cua_run` | 仅 Jev 模式可用；`dryRun: true` 不执行桌面动作，但仍调用 TypeSafe |
 | `/skill:jev-codex-cua` | 加载 Agent 使用说明 |
 
-原生动作必须携带同一应用最新的 `cua_get_app_state` 返回的 `stateId`。它仅可使用一次，在当前 Agent turn 内最多有效 60 秒；再次观察或切换模式会使其失效。每次动作后重新读取状态，不与其他 Computer Use 通道并行操作。
+原生动作必须携带同一应用最新状态的 `stateId`，来自 `cua_get_app_state` 或通过完整结构检查的动作返回。它仅可使用一次，在当前 Agent turn 内最多有效 60 秒；再次观察或切换模式会使其失效。动作返回新 stateId 时，检查该状态后可直接继续；否则重新读取。不与其他 Computer Use 通道并行操作。
+
+Native/Jev 在同一 Agent turn 内共用 **180 秒/30 次动作尝试**硬预算，包含规划间隔与官方授权等待；切模式或重连不续期。`cua_status` 返回剩余预算和最近调用诊断。详见[结果分类、分段耗时与状态复用](docs/native-diagnostics/README.md)。
 
 模式选择保存在当前 pi 会话分支。缺少 Jev 密钥时回退到 native；之后补充密钥不会自动重新启用 Jev。任务运行中不能切换模式。
 
@@ -118,6 +120,7 @@ PR 和 main 推送运行验证。发布需要在已合入 main 的提交上推�
 
 - [发布流程与 npm 配置](docs/npm-release.md)
 - [本地验收证据与限制](docs/local-acceptance.md)
+- [固定真实任务基准：执行协议、记录与指标](docs/benchmark/README.md)（源码 checkout 工具，不自动操作桌面）
 - [轨迹数据与隐私](docs/action-trace.md)
 - [Sky 排查记录](docs/sky-diagnostics.md)
 

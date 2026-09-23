@@ -18,6 +18,7 @@
     "prepack": "npm run build",
     "prepublishOnly": "npm run check && npm test && npm run test:package",
     "test:package": "node --experimental-strip-types scripts/check-package.ts",
+    "benchmark": "node --experimental-strip-types scripts/benchmark.ts",
     "accept:handoff": "node --experimental-strip-types scripts/accept-handoff.ts",
     "accept:app-access": "node --experimental-strip-types scripts/accept-app-access.ts",
     "allow-app": "node --experimental-strip-types src/add-app.ts",

@@ -1,4 +1,5 @@
 import { parseAX } from "./ax.ts";
+import { SkyCallError } from "./sky/diagnostics.ts";
 import type { Driver } from "./types.ts";
 import type { SkyResult, TurnIdentity, SkyApprovalHandler } from "./sky/client.ts";
 
@@ -23,7 +24,11 @@ export function createSkyDriver(client: SkyCaller, turn: TurnIdentity, signal?: 
     signal?.throwIfAborted();
     if (!app) throw new Error("Bind an app before using Sky.");
     const result = await client.callSky(method, { app, ...args }, turn, signal, approve);
-    if (result.isError) throw new Error("Sky action failed; do not replay it without fresh observation.");
+    if (result.isError || result.diagnostics?.code || ["declined", "cancelled"].includes(result.diagnostics?.approval ?? "")) {
+      const message = "Sky composite call did not confirm completion; action outcome may be unknown. Do not replay automatically.";
+      if (result.diagnostics) throw new SkyCallError(message, result.diagnostics);
+      throw new Error(message);
+    }
     return result;
   };
   return {
