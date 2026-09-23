@@ -55,6 +55,10 @@ try {
     assert.equal(status.isError, undefined);
     const state = JSON.parse((status.content as { text: string }[])[0]!.text);
     assert.equal(state.mode, "native");
+    assert.equal(state.version.currentVersion, manifest.version);
+    assert.equal(state.version.latestVersion, null);
+    assert.equal(state.version.updateCheck, "not-checked");
+    assert.equal(mcp.getServerVersion()?.version, manifest.version);
     assert.equal(state.accessManagement.version, 1);
     assert.equal(state.accessManagement.cliPath, realpathSync(join(installed, "dist/mcp/access.js")));
     assert.ok(entries.includes("package/claude-skills/deskhand-access/SKILL.md"));

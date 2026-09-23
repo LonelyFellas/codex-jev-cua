@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "deskhand": {
+      "command": "npx",
+      "args": ["--yes", "--package=jev-codex-cua@0.6.0", "deskhand-mcp"],
+      "env": { "DESKHAND_DISTRIBUTION": "claude-plugin" }
+    }
+  }
+}

@@ -2,7 +2,9 @@
 
 此入口让 Claude Code 负责规划，经本地 stdio MCP 调用现有 Codex/Sky。**仅 native，不调用 Jev，不需要 TypeSafe Key，不要求安装 pi。** 仍要求 macOS、官方 Codex/Sky 运行时及用户授予的系统/应用权限；不是独立桌面引擎。
 
-## 安装前先选版本
+> **0.6.0 起推荐 [Claude Plugin 分发](../claude-plugin/README.md)**：由 `/plugin` 同时安装/升级 MCP 与 Skill，并通过 `cua_status` 查看版本。以下为旧版手动安装与源码调试流程，不是 Plugin 用户必做步骤。
+
+## 手动安装：版本兼容
 
 | 使用版本 | Claude 默认应用范围 | 权限 Skill |
 |---|---|---|
@@ -11,7 +13,7 @@
 
 需要 macOS、Node.js ≥22.19、Claude Code，以及已经安装的 Codex/Sky 官方运行时。只装 npm 包不会自动安装 Sky 或授予系统权限。
 
-## 安装新功能：从源码安装 MCP 和 Skill
+## 手动安装：从源码安装 MCP 和 Skill
 
 在包含本次改动的 checkout 构建：
 

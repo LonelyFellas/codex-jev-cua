@@ -13,7 +13,9 @@ Desktop tools for [pi](https://pi.dev), powered by the installed Codex/Sky runti
 
 A local stdio MCP entry point, `deskhand-mcp`, reuses Codex/Sky without pi or Jev. Explicit tasks carry budgets and require human elicitation approval. Available in source version 0.4.0: [Claude Code setup (Chinese)](docs/claude-native/README.md). Check npm registry availability before using the published-package command. Live validation through Claude is still pending.
 
-Starting with 0.5.0, Claude MCP defaults to **all-app access**, while preserving explicit allowlists (published 0.4.0 still defaults to Calculator only). It also adds the user-invoked `/deskhand-access add <app>|all|allowlist` Skill. Install MCP and the Skill separately; see the [installation and permission guide](docs/claude-native/README.md). Neither feature grants macOS/Sky permissions automatically; confirm 0.5.0 is available in the npm registry before installing.
+**Recommended from 0.6.0: [Claude Plugin](docs/claude-plugin/README.md)** — add the `LonelyFellas/jev-codex-cua` marketplace and install `deskhand@deskhand` through `/plugin`. MCP and the namespaced `/deskhand:deskhand-access` Skill update together. `cua_status` reports the installed version offline; optional `checkUpdates: true` reports the latest published version and upgrade guidance without changing configuration or permissions. Availability depends on the npm release; live Plugin acceptance is pending.
+
+Claude MCP defaults to **all-app access** while preserving explicit allowlists. System/Sky permissions still require approval. [Legacy standalone setup](docs/claude-native/README.md) remains supported.
 
 ## Install
 

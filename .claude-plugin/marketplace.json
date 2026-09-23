@@ -1,0 +1,12 @@
+{
+  "name": "deskhand",
+  "metadata": { "description": "Deskhand native desktop MCP and bundled Claude skills" },
+  "owner": { "name": "LonelyFellas" },
+  "plugins": [
+    {
+      "name": "deskhand",
+      "source": "./plugins/deskhand",
+      "description": "Native Codex Sky desktop tools and access-management skill for Claude Code"
+    }
+  ]
+}

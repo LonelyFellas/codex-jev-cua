@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { versionStatus } from "./version.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,7 +46,7 @@ export class NativeMcpSession {
   }
   status() {
     const config = this.deps.config();
-    return { host: "mcp", mode: "native", appAccess: config.appAccess, allowedApps: config.allowedApps,
+    return { host: "mcp", mode: "native", version: versionStatus(), appAccess: config.appAccess, allowedApps: config.allowedApps,
       envFile: config.envFile, appAccessFile: config.appAccessFile, appAccessSource: config.appAccessSource,
       accessManagement: { version: 1, cliPath: fileURLToPath(new URL("./access.js", import.meta.url)), appsFile: appGrantsPath(config.envFile) },
       officialApproval: "runtime-controlled-via-client-elicitation", busy: this.busy,
