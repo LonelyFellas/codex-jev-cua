@@ -99,6 +99,25 @@ test("official approval denial stops task, and cancellation aborts in-flight Sky
   assert.equal(h.status().task, null); assert.equal(f.closed, 1);
 });
 
+test("deadline classification uses the abort reason even if the clock still shows time remaining", async (t) => {
+  // Deterministically model a timer firing before the next monotonic clock sample reaches
+  // the deadline; this must not depend on host timer resolution or CI scheduling.
+  t.mock.method(performance, "now", () => 0);
+  const f = fixture({ hang: true, limits: { durationMs: 10, maxActions: 30 } });
+  const s = new NativeMcpSession(f.deps);
+  try {
+    const { taskId } = await s.begin("Calculator", "6", signal(), async () => true);
+    await assert.rejects(s.execute(spec("cua_get_app_state"), { app: "Calculator", taskId }, signal(), async () => true), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /"reason":"task_deadline_exceeded"/);
+      assert.match(error.message, /"remainingMs":10/);
+      return true;
+    });
+    assert.equal(s.status().task, null);
+    assert.equal(f.closed, 1);
+  } finally { s.close(); }
+});
+
 test("MCP config stays native, uses an independent path and preserves explicit app access", () => {
   const home = mkdtempSync(join(tmpdir(), "deskhand-mcp-config-"));
   try {
