@@ -5,6 +5,7 @@ import { Check } from "typebox/value";
 import { nativeSpecs } from "../native-specs.ts";
 import { NativeMcpSession, type Dependencies } from "./session.ts";
 import { currentVersion, checkVersion } from "./version.ts";
+import { requestApproval, supportsApproval, type ApprovalResult } from "./approval.ts";
 
 const taskId = Type.String({ minLength: 1, maxLength: 80 });
 const object = (properties: Record<string, TSchema>) => Type.Object(properties, { additionalProperties: false });
@@ -21,26 +22,24 @@ export function createNativeMcpServer(deps?: Dependencies) {
     description: spec.description.replaceAll("per agent turn", "per explicit task").replaceAll("in an observed app", "in the task app") + " Requires the current taskId. Do not overlap other computer-use channels.",
     parameters: { ...spec.parameters, properties: { ...(spec.parameters as TObject).properties, taskId }, required: [...((spec.parameters as TObject).required ?? []), "taskId"] } as TSchema,
   }))];
-  const confirm = async (message: string, signal: AbortSignal) => {
-    const capability = server.getClientCapabilities()?.elicitation;
-    if (!capability || (Object.keys(capability).length > 0 && !("form" in capability))) return false;
-    try {
-      signal.throwIfAborted();
-      const result = await server.elicitInput({ mode: "form", message,
-        requestedSchema: { type: "object", properties: { confirm: { type: "boolean", title: "Approve this specific request", default: false } }, required: ["confirm"] } },
-      { signal, timeout: 180_000 });
-      return !signal.aborted && result.action === "accept" && result.content?.confirm === true;
-    } catch { return false; }
-  };
+  type ApprovalDiagnostic = ApprovalResult & { phase: "task" | "sky" };
+  let lastApproval: ApprovalDiagnostic | null = null;
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.map((tool) => ({ name: tool.name, description: tool.description,
     inputSchema: tool.parameters as { type: "object"; properties?: Record<string, object>; required?: string[] } })) }));
   server.setRequestHandler(CallToolRequestSchema, async (request, context) => {
     const tool = tools.find((t) => t.name === request.params.name);
     if (!tool || !Check(tool.parameters, request.params.arguments ?? {})) return { isError: true, content: [{ type: "text", text: "Unknown tool or invalid arguments. No desktop action dispatched." }] };
     const args = request.params.arguments ?? {};
+    let approval: ApprovalDiagnostic | undefined;
+    const confirm = async (message: string, signal: AbortSignal) => {
+      const result = await requestApproval(server, message, signal);
+      approval = { ...result, phase: tool.name === "cua_task_begin" ? "task" : "sky" };
+      lastApproval = approval;
+      return result.outcome === "accepted";
+    };
     try {
       if (tool.name === "cua_status") {
-        const status = session.status();
+        const status = { ...session.status(), confirmation: { interaction: "accept-only", formSupported: supportsApproval(server), lastResult: lastApproval } };
         if (args.checkUpdates === true) status.version = await checkVersion(context.signal);
         return { content: [{ type: "text", text: JSON.stringify(status) }] };
       }
@@ -48,9 +47,14 @@ export function createNativeMcpServer(deps?: Dependencies) {
       if (tool.name === "cua_task_end") return { content: [{ type: "text", text: JSON.stringify(session.end(args.taskId as string)) }] };
       const spec = nativeSpecs.find((s) => s.name === tool.name)!;
       const result = await session.execute(spec, args, context.signal, confirm);
-      return { content: result.content };
+      return { content: approval && approval.outcome !== "accepted"
+        ? [{ type: "text" as const, text: `Approval diagnostic: ${JSON.stringify(approval)}. Stop; do not automatically retry or bypass confirmation.` }, ...result.content]
+        : result.content };
     } catch (error) {
-      return { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : "Native MCP request failed." }] };
+      const message = error instanceof Error ? error.message : "Native MCP request failed.";
+      return { isError: true, content: [{ type: "text", text: approval
+        ? `${message}\nApproval diagnostic: ${JSON.stringify(approval)}. Stop; do not automatically retry or bypass confirmation.`
+        : message }] };
     }
   });
   server.onclose = () => session.close();

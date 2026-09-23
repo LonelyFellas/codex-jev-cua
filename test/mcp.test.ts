@@ -40,7 +40,13 @@ test("MCP handshake advertises only native tools, validates args and forwards ex
   const f = fixture({ approval: true }); const { server } = createNativeMcpServer(f.deps);
   const client = new Client({ name: "test", version: "1" }, { capabilities: { elicitation: { form: {} } } });
   let prompts = 0;
-  client.setRequestHandler(ElicitRequestSchema, async () => { prompts++; return { action: "accept", content: { confirm: true } }; });
+  client.setRequestHandler(ElicitRequestSchema, async (request) => {
+    prompts++;
+    assert.equal(request.params.mode, "form");
+    assert.deepEqual(request.params.requestedSchema, { type: "object", properties: {} });
+    assert.match(request.params.message, /Choose Accept/);
+    return { action: "accept" };
+  });
   const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
   const call = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
   const decode = (r: Awaited<ReturnType<typeof call>>) => JSON.parse((r.content as { text: string }[])[0]!.text);
@@ -83,7 +89,7 @@ test("task scope, single-use states and no-reset budgets hold independently of p
     assert.ok(second.stateId);
     await assert.rejects(s.execute(spec("cua_click"), { app: "Calculator", taskId, stateId: second.stateId, element_index: 1 }, signal(), async () => true), /stopped/);
     assert.equal(f.calls.filter((c) => c === "click").length, 1); assert.equal(s.status().task, null);
-    await assert.rejects(s.begin("Calculator", "renew", signal(), async () => false), /declined/);
+    await assert.rejects(s.begin("Calculator", "renew", signal(), async () => false), /confirmation was not accepted/);
     assert.equal(s.status().task, null);
   } finally { s.close(); }
 });
@@ -147,16 +153,26 @@ test("closing during approval cannot resurrect a task", async () => {
   await assert.rejects(pending, /closed/); assert.equal(s.status().task, null); assert.equal(f.calls.length, 0);
 });
 
-test("elicitation acceptance without explicit checked confirmation is not approval", async () => {
-  const f = fixture(); const { server } = createNativeMcpServer(f.deps);
-  const client = new Client({ name: "test", version: "1" }, { capabilities: { elicitation: { form: {} } } });
-  client.setRequestHandler(ElicitRequestSchema, async () => ({ action: "accept", content: { confirm: false } }));
-  const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
-  try {
-    const r = await client.callTool({ name: "cua_task_begin", arguments: { app: "Calculator", goal: "6" } });
-    assert.equal(r.isError, true); assert.equal(f.calls.length, 0);
-  } finally { await client.close(); await server.close(); }
-});
+for (const action of ["accept", "decline", "cancel"] as const) {
+  test(`single-button ${action} is respected and reported without desktop dispatch`, async () => {
+    const f = fixture(); const { server } = createNativeMcpServer(f.deps);
+    const client = new Client({ name: "test", version: "1" }, { capabilities: { elicitation: { form: {} } } });
+    client.setRequestHandler(ElicitRequestSchema, async () => ({ action, content: {} }));
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
+    try {
+      const r = await client.callTool({ name: "cua_task_begin", arguments: { app: "Calculator", goal: "6" } });
+      assert.equal(r.isError, action === "accept" ? undefined : true);
+      assert.equal(f.calls.length, 0);
+      const status = await client.callTool({ name: "cua_status", arguments: {} });
+      const state = JSON.parse((status.content as { text: string }[])[0]!.text);
+      const outcome = { accept: "accepted", decline: "declined", cancel: "cancelled" }[action];
+      assert.deepEqual(state.confirmation, { interaction: "accept-only", formSupported: true, lastResult: { outcome, phase: "task" } });
+      assert.equal(state.busy, false);
+      assert.equal(state.task !== null, action === "accept");
+      if (action !== "accept") assert.match(JSON.stringify(r), new RegExp(outcome));
+    } finally { await client.close(); await server.close(); }
+  });
+}
 
 test("session shutdown cancels an in-flight bridge request and closes its connection", async () => {
   const f = fixture({ hang: true }); const s = new NativeMcpSession(f.deps);

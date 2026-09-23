@@ -1,6 +1,6 @@
 {
   "name": "deskhand",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Native Codex Sky desktop tools with bundled access-management skill",
   "author": { "name": "LonelyFellas" },
   "license": "MIT"
