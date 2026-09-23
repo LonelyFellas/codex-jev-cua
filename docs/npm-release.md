@@ -83,7 +83,7 @@ npm test
 npm run test:package
 ```
 
-`test:package` 触发 npm pack/prepack，安装 tarball 到临时目录，通过 pi 加载器验证 14 个工具、模式命令和 3 个 Skill，以及编译后 API、无开发依赖的应用范围 CLI 和授权文件打包排除规则。消费者采用 omit=dev、ignore-scripts、prefer-offline；MCP 运行依赖可能需要访问 npm registry。legacy-peer-deps 仅模拟宿主提供 peer，不是绕过发布门禁。另验证不安装 pi 的消费者可通过 stdio 完成 MCP 握手、发现 13 个 native 工具及读取状态；不访问真实桌面。
+`test:package` 触发 npm pack/prepack，安装 tarball 到临时目录，通过 pi 加载器验证 14 个工具、模式命令和 3 个 Skill，以及编译后 API、无开发依赖的应用范围 CLI 和授权文件打包排除规则。消费者采用 omit=dev、ignore-scripts、prefer-offline；MCP 运行依赖可能需要访问 npm registry。legacy-peer-deps 仅模拟宿主提供 peer，不是绕过发布门禁。另验证不安装 pi 的消费者可通过 stdio 完成 MCP 握手、发现 14 个工具（含 native 观察/操作与应用启动入口）及读取状态；不访问真实桌面。
 
 可选实机测试必须显式授权并传 `--live`，不在 CI 中运行。`accept:app-access` 为真实 Sky 只读范围验收；`accept:handoff` 会操作 Calculator 且包含模拟决策。边界见 [本地验收](local-acceptance.md)。
 

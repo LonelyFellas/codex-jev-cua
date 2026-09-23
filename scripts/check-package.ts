@@ -50,7 +50,9 @@ try {
     env: { PATH: process.env.PATH ?? "", HOME: consumer, DESKHAND_CONFIG_FILE: mcpConfig }, stderr: "pipe" });
   try {
     await mcp.connect(transport);
-    assert.equal((await mcp.listTools()).tools.length, 13);
+    const mcpTools = (await mcp.listTools()).tools;
+    assert.equal(mcpTools.length, 14);
+    assert.ok(mcpTools.some(tool => tool.name === "cua_launch_app"));
     const status = await mcp.callTool({ name: "cua_status", arguments: {} });
     assert.equal(status.isError, undefined);
     const state = JSON.parse((status.content as { text: string }[])[0]!.text);

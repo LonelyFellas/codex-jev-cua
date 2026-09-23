@@ -31,6 +31,16 @@ Plugin 的 MCP 启动配置固定绑定同版本 npm 包，由 npx 获取依赖�
 
 验收时用 Calculator 只读任务：确认弹窗没有复选框，点击一次 Accept 后任务能开始；Sky 若单独申请则另行正常确认；Decline/Cancel 应停止。自动化覆盖真实 MCP 协议握手和模拟客户端返回，不代替用户在 Claude 界面的手动确认验收。
 
+## 0.7.0：主动打开任意已安装应用
+
+用户可直接说“打开微信并读取窗口”“打开飞书”或“打开 Safari”。新增 `cua_launch_app`，不是仅支持预设的几款应用；`all` 下可针对任何已安装、已注册应用，显式 allowlist 下仍须与名单及当前任务一致。
+
+Agent 先以准确应用名或 Bundle ID 建立任务，在一次任务确认后调用启动工具，再用 Sky 读取状态验证。例如任务 app 为 `WeChat` 时传 `identityType=name`；任务 app 为 `com.tencent.xinWeChat` 时传 `identityType=bundleId`。用户无需手写参数，但本地化别名与注册名称不一致时需要先识别实际应用，不应把名称识别失败说成系统权限不足。
+
+启动由 macOS LaunchServices 完成，会打开/激活应用，计入一次动作；不需要已有窗口或 stateId。返回只说明系统接受启动请求，不保证窗口就绪；旧 stateId 失效，必须重新观察。只读请求不自动启动，Sky 拒绝或未知结果不自动换路径重试。工具不接受 URL、文件、脚本或额外启动参数，不安装应用、不修改系统权限。
+
+发布后通过 `/plugin` 更新并重启。先用“打开 Calculator 并只读取窗口，不点击、不输入”验收，确认既能启动也能观察；本版本仍需真实桌面验收，自动化仅模拟启动，不会打开用户应用。
+
 ## 从手动安装迁移
 
 先核对 `/mcp` 和旧服务器的来源、scope、自定义环境变量。经用户确认后禁用/移除旧 Deskhand MCP，再安装 Plugin，避免两个实例。自定义 `DESKHAND_CONFIG_FILE` 等设置需要用户按 Claude 支持的配置方式保留，不能静默丢弃或复制。默认授权文件仍位于原来的 `~/.config/deskhand/`，无需搬迁。

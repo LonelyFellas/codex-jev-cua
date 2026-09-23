@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { versionStatus } from "./version.ts";
+import { launchApp, launchArguments, LaunchAppError, type AppIdentityType } from "./launch-app.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,7 @@ export interface Dependencies {
   config(): PiConfig;
   client(): SkyCaller & { close(): void };
   limits?: { durationMs: number; maxActions: number };
+  launchApp?: typeof launchApp;
 }
 export function nativeConfig(env: NodeJS.ProcessEnv = process.env, home = homedir()): PiConfig {
   const file = env.DESKHAND_CONFIG_FILE ?? join(home, ".config/deskhand/cua.env");
@@ -85,10 +87,12 @@ export class NativeMcpSession {
     if (!task || task.id !== args.taskId) throw new Error("A user-confirmed taskId is required. Use cua_task_begin for a new authorized task.");
     if (spec.method !== "list_apps" && args.app !== task.app) throw new Error("Task is bound to one app; cannot expand scope.");
     this.checkApp(task.app);
+    const launching = spec.method === "launch_app";
+    if (launching) launchArguments(args.app as string, args.identityType as AppIdentityType);
     const previous = this.snapshot;
     if (!spec.readOnly) {
       this.snapshot = undefined;
-      validateNativeAction(previous, spec.method, args, task.identity.turnId);
+      if (!launching) validateNativeAction(previous, spec.method, args, task.identity.turnId);
     } else {
       // Discovery indexes are not window indexes; never carry an old token into that reply.
       this.snapshot = undefined;
@@ -103,6 +107,15 @@ export class NativeMcpSession {
       const combined = AbortSignal.any([signal, task.controller.signal, lease.signal]);
       combined.throwIfAborted();
       task.budget.beforeDispatch(!spec.readOnly);
+      if (launching) {
+        diagnostic = { source: "macos_launchservices", method: "launch_app" };
+        submitted = true;
+        await (this.deps.launchApp ?? launchApp)(task.app, args.identityType as AppIdentityType, combined);
+        combined.throwIfAborted(); task.budget.beforeDispatch(false);
+        this.lastDiagnostic = { ...diagnostic as object, actionOutcome: "launch_request_accepted", observationOutcome: "unavailable", budget: task.budget.status() };
+        return { content: [{ type: "text", text: JSON.stringify({ taskId: task.id, app: task.app, diagnostic: this.lastDiagnostic,
+          instruction: "LaunchServices accepted the launch/activation request, not proof of a visible or ready window. No stateId was created. Use cua_get_app_state for the same task app before any UI action; normal Sky/system approval still applies. Do not automatically repeat launch on a read failure." }) }], diagnostic: this.lastDiagnostic };
+      }
       this.client ??= this.deps.client();
       const { taskId: _task, stateId: _state, ...nativeArgs } = args;
       submitted = true;
@@ -133,7 +146,7 @@ export class NativeMcpSession {
         actionOutcome: error instanceof SkyCallError ? actionOutcome(error.diagnostics, !spec.readOnly) : spec.readOnly ? "not_applicable" : submitted ? "unknown" : "not_dispatched",
         observationOutcome: "unavailable", bridge: error instanceof SkyCallError ? error.diagnostics : undefined,
         reason: signal.aborted ? "cancelled" : budgetError?.code
-          ?? (task.budget.status().remainingMs === 0 ? "task_deadline_exceeded" : "desktop_call_failed"),
+          ?? (task.budget.status().remainingMs === 0 ? "task_deadline_exceeded" : error instanceof LaunchAppError ? error.code : "desktop_call_failed"),
         budget: task.budget.status() };
       this.close();
       throw new Error(`Desktop task stopped. No replay. Diagnostic: ${JSON.stringify(this.lastDiagnostic)}`);
