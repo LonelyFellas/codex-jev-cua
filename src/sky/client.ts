@@ -4,9 +4,12 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import type { SkyRuntime } from "./runtime.ts";
+import { SkyCallError, responseCode } from "./diagnostics.ts";
+import type { SkyDiagnostics } from "./diagnostics.ts";
+import { TaskBudgetError } from "../task-budget.ts";
 
 export type SkyContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
-export interface SkyResult { content?: SkyContent[]; isError?: boolean }
+export interface SkyResult { content?: SkyContent[]; isError?: boolean; diagnostics?: SkyDiagnostics }
 interface ToolSchema { name: string; inputSchema?: { properties?: Record<string, unknown>; additionalProperties?: boolean } }
 interface DiscoveryResult extends SkyResult { tools?: ToolSchema[] }
 export class SkyTimeoutError extends Error {
@@ -50,6 +53,8 @@ export class SkyClient {
   private pauseDeadline?: () => void;
   private resumeDeadline?: () => void;
   private approvalRequested = false;
+  private diagnostic?: SkyDiagnostics;
+  private finishApprovalTiming?: () => void;
   private buffer = "";
   private readonly decoder = new StringDecoder("utf8");
 
@@ -65,6 +70,11 @@ export class SkyClient {
     if (this.busy) throw new Error("Sky connection is busy; concurrent CU calls are not supported.");
     signal?.throwIfAborted();
     this.busy = true;
+    const startedAt = performance.now();
+    const diagnostic: SkyDiagnostics = { method, phase: "preflight", dispatched: false, rpcOutcome: "not_returned", approval: "not_requested",
+      timings: { bridgeTotalMs: 0, initializeMs: 0, discoveryMs: 0, rpcMs: 0, approvalMs: 0 } };
+    this.diagnostic = diagnostic;
+    this.phase = "preflight";
     const controller = new AbortController();
     let remainingMs = this.timeoutMs;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -84,6 +94,7 @@ export class SkyClient {
     this.approvalRequested = false;
     try {
       if (!this.initialized) await this.start(combined);
+      this.phase = "validate_arguments";
       combined.throwIfAborted();
       const schema = this.schemas.get(method);
       if (!schema) throw new Error(`Sky does not advertise tool ${method}.`);
@@ -101,12 +112,27 @@ export class SkyClient {
         if (unexpected.length) throw new Error(`Unsupported Sky arguments for ${method}: ${unexpected.join(", ")}`);
       }
       this.phase = method;
-      return await this.request("tools/call", { name: method, arguments: prepared, _meta: requestMeta(turn) }, combined);
+      const rpcStarted = performance.now();
+      try {
+        const result = await this.request("tools/call", { name: method, arguments: prepared, _meta: requestMeta(turn) }, combined);
+        // Never accept diagnostic fields supplied by the remote service.
+        diagnostic.rpcOutcome = result.isError ? "tool_error" : "returned";
+        const text = (result.content ?? []).filter((c) => c.type === "text").map((c) => c.type === "text" ? c.text : "").join("\n");
+        diagnostic.code = responseCode(text, Boolean(result.isError));
+        return { ...result, diagnostics: diagnostic };
+      } finally { diagnostic.timings.rpcMs = Math.round(performance.now() - rpcStarted); }
     } catch (error) {
       this.close();
-      if (controller.signal.aborted && !signal?.aborted) throw controller.signal.reason;
-      throw error;
+      diagnostic.rpcOutcome = "transport_error";
+      diagnostic.code = signal?.reason instanceof TaskBudgetError ? "task_deadline_exceeded"
+        : signal?.aborted ? "cancelled" : controller.signal.aborted ? "timeout" : "transport_error";
+      const failure = controller.signal.aborted && !signal?.aborted ? controller.signal.reason : error;
+      throw new SkyCallError(failure instanceof Error ? failure.message : "Sky call failed.", diagnostic);
     } finally {
+      this.finishApprovalTiming?.(); this.finishApprovalTiming = undefined;
+      diagnostic.phase = this.phase;
+      diagnostic.timings.bridgeTotalMs = Math.round(performance.now() - startedAt);
+      this.diagnostic = undefined;
       clearTimeout(timer);
       this.approvalHandler = undefined; this.callSignal = undefined;
       this.pauseDeadline = undefined; this.resumeDeadline = undefined;
@@ -142,13 +168,19 @@ export class SkyClient {
     child.once("error", () => this.fail(new Error("Sky process failed to launch.")));
     child.once("exit", () => this.fail(new Error("Sky process exited. Outcome may be unknown; do not replay actions.")));
     this.phase = "initialize";
-    await this.request("initialize", {
-      protocolVersion: "2025-06-18", capabilities: { elicitation: {} }, clientInfo: { name: "jev-codex-cua", version: "0.1.0" },
-    }, signal);
+    const initializeStarted = performance.now();
+    try {
+      await this.request("initialize", {
+        protocolVersion: "2025-06-18", capabilities: { elicitation: {} }, clientInfo: { name: "jev-codex-cua", version: "0.1.0" },
+      }, signal);
+    } finally { if (this.diagnostic) this.diagnostic.timings.initializeMs = Math.round(performance.now() - initializeStarted); }
     signal.throwIfAborted();
     this.write({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
     this.phase = "tools/list";
-    const discovery = await this.request("tools/list", {}, signal) as DiscoveryResult;
+    const discoveryStarted = performance.now();
+    let discovery: DiscoveryResult;
+    try { discovery = await this.request("tools/list", {}, signal) as DiscoveryResult; }
+    finally { if (this.diagnostic) this.diagnostic.timings.discoveryMs = Math.round(performance.now() - discoveryStarted); }
     if (!Array.isArray(discovery.tools) || discovery.tools.some((tool) => !tool || typeof tool.name !== "string")) throw new Error("Sky returned an invalid tool catalog.");
     this.schemas = new Map(discovery.tools.map((tool) => [tool.name, tool]));
     this.initialized = true;
@@ -193,18 +225,32 @@ export class SkyClient {
     const valid = request && typeof request.message === "string" && request.message.length > 0 && request.message.length <= 4000
       && (request.mode === undefined || request.mode === "form") && emptyObject;
     const signal = this.callSignal;
+    const diagnostic = this.diagnostic;
     if (!valid || !signal || signal.aborted || !this.approvalHandler || this.approvalRequested) {
+      if (diagnostic) diagnostic.approval = "declined";
       this.write({ jsonrpc: "2.0", id, result: { action: "decline" } });
       return;
     }
     this.approvalRequested = true;
     this.pauseDeadline?.();
+    const approvalStarted = performance.now();
+    let timingFinished = false;
+    const finishTiming = () => {
+      if (!timingFinished && diagnostic) diagnostic.timings.approvalMs += Math.round(performance.now() - approvalStarted);
+      timingFinished = true;
+    };
+    this.finishApprovalTiming = finishTiming;
     try {
       const accepted = await this.approvalHandler(request.message as string, signal);
+      if (diagnostic) diagnostic.approval = signal.aborted ? "cancelled" : accepted === true ? "accepted" : "declined";
       this.write({ jsonrpc: "2.0", id, result: signal.aborted ? { action: "cancel" } : accepted === true ? { action: "accept", content: {} } : { action: "decline" } });
     } catch {
+      if (diagnostic) diagnostic.approval = "cancelled";
       this.write({ jsonrpc: "2.0", id, result: { action: "cancel" } });
-    } finally { this.resumeDeadline?.(); }
+    } finally {
+      finishTiming();
+      this.resumeDeadline?.();
+    }
   }
 
   private request(method: string, params: Record<string, unknown>, signal: AbortSignal): Promise<SkyResult> {
@@ -225,6 +271,10 @@ export class SkyClient {
       });
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) { abort(); return; }
+      if (method === "tools/call" && this.diagnostic) {
+        this.diagnostic.dispatched = true;
+        this.diagnostic.requestId = id;
+      }
       this.write({ jsonrpc: "2.0", id, method, params });
     });
   }

@@ -69,6 +69,11 @@ export interface TaskResult {
   tracePath?: string;
   traceIncomplete?: boolean;
   outcomeUnknown?: boolean;
+  diagnostic?: {
+    phase: string;
+    actionOutcome: "not_dispatched" | "unknown" | "call_returned";
+    observationOutcome: "not_attempted" | "available" | "unavailable";
+  };
   handoff?: {
     appName: string;
     goal: string;

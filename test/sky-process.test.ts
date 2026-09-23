@@ -4,6 +4,8 @@ import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SkyClient, newTurnIdentity } from "../src/sky/client.ts";
+import { SkyCallError } from "../src/sky/diagnostics.ts";
+import { TaskBudget } from "../src/task-budget.ts";
 
 async function setup(timeout = 10_000, clientPath = "unused") {
   const directory = await mkdtemp(join(tmpdir(), "jev-fake-sky-"));
@@ -14,6 +16,70 @@ async function setup(timeout = 10_000, clientPath = "unused") {
   return { client, async cleanup() { client.close(); await rm(directory, { recursive: true, force: true }); } };
 }
 const turn = newTurnIdentity("test-session", "test-model", "low");
+
+test("bridge diagnostics measure cold/warm phases and cannot be forged by the server", async () => {
+  const s = await setup();
+  try {
+    const cold = await s.client.callSky("get_app_state", {}, turn);
+    assert.equal(cold.diagnostics?.dispatched, true);
+    assert.equal(cold.diagnostics?.rpcOutcome, "returned");
+    assert.ok(cold.diagnostics!.timings.initializeMs >= 0);
+    assert.ok(cold.diagnostics!.timings.bridgeTotalMs >= cold.diagnostics!.timings.rpcMs);
+    const warm = await s.client.callSky("forged_diagnostics", {}, turn);
+    assert.equal(warm.diagnostics?.dispatched, true);
+    assert.equal(warm.diagnostics?.timings.initializeMs, 0);
+    assert.equal(warm.diagnostics?.timings.discoveryMs, 0);
+    assert.ok(!JSON.stringify(warm.diagnostics).includes("REMOTE_DIAGNOSTIC"));
+    const noWindow = await s.client.callSky("no_windows", {}, turn);
+    assert.equal(noWindow.diagnostics?.code, "no_windows_available");
+    assert.equal(noWindow.diagnostics?.rpcOutcome, "tool_error");
+    assert.ok(!JSON.stringify(noWindow.diagnostics).includes("SECRET_UI"));
+  } finally { await s.cleanup(); }
+});
+
+test("structured diagnostics distinguish pre-dispatch errors from uncertain dispatched actions", async () => {
+  const s = await setup();
+  try {
+    await assert.rejects(s.client.callSky("click", { bogus: true }, turn), (e: unknown) => {
+      assert.ok(e instanceof SkyCallError); assert.equal(e.diagnostics.dispatched, false); return true;
+    });
+  } finally { await s.cleanup(); }
+  const other = await setup();
+  try {
+    await other.client.callSky("get_app_state", {}, turn);
+    const abort = new AbortController();
+    const pending = other.client.callSky("hang", {}, turn, abort.signal);
+    setTimeout(() => abort.abort(), 30);
+    await assert.rejects(pending, (e: unknown) => {
+      assert.ok(e instanceof SkyCallError); assert.equal(e.diagnostics.dispatched, true);
+      assert.equal(e.diagnostics.code, "cancelled"); assert.ok(e.diagnostics.requestId); return true;
+    });
+  } finally { await other.cleanup(); }
+});
+
+test("task deadline includes approval wait even though network deadline is paused", async () => {
+  const s = await setup();
+  try {
+    await s.client.callSky("get_app_state", {}, turn);
+    const budget = new TaskBudget({ durationMs: 150, maxActions: 1 }); const lease = budget.enter();
+    let asked = false;
+    try {
+      await assert.rejects(s.client.callSky("approve", {}, turn, lease.signal, async (_message, signal) => {
+        asked = true;
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return false;
+      }), (e: unknown) => {
+        assert.ok(e instanceof SkyCallError); assert.equal(e.diagnostics.code, "task_deadline_exceeded");
+        assert.equal(e.diagnostics.dispatched, true); return true;
+      });
+      assert.equal(asked, true);
+      assert.equal(lease.signal.aborted, true);
+      await assert.rejects(s.client.callSky("click", {}, turn), /closed/);
+    } finally { lease.finish(); }
+  } finally { await s.cleanup(); }
+});
 
 test("real child-process protocol initializes, preserves metadata and translates element indexes", async () => {
   const s = await setup();

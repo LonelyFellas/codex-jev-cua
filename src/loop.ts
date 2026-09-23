@@ -4,6 +4,7 @@ import { buildContext, parseAX, selectCandidates } from "./ax.ts";
 import { createJevDecider } from "./jev.ts";
 import { DEFAULT_ALLOWED_APPS, evaluatePolicy, prepareAction, validDecision } from "./policy.ts";
 import { createTrace } from "./trace.ts";
+import { SkyCallError } from "./sky/diagnostics.ts";
 import type { TraceMode } from "./trace.ts";
 import type { JevOptions } from "./jev.ts";
 import type { AXElement, Decision, Decider, Driver, PreparedAction, Resources, Status, TaskResult } from "./types.ts";
@@ -50,6 +51,8 @@ export async function runTask(options: TaskOptions): Promise<TaskResult> {
   let observationSnapshot = 0;
   let phase = "start";
   let outcomeUnknown = false;
+  let actionOutcome: "not_dispatched" | "unknown" | "call_returned" = "not_dispatched";
+  let observationOutcome: "not_attempted" | "available" | "unavailable" = "not_attempted";
   let trace: ReturnType<typeof createTrace> | undefined;
   const emit = options.emit ?? (() => {});
   function snapshot(at: "initial" | "preflight" | "after_action", ax: string): number {
@@ -59,7 +62,7 @@ export async function runTask(options: TaskOptions): Promise<TaskResult> {
   }
   function finish(status: Status, reason: string, extra: Partial<TaskResult> = {}): TaskResult {
     const result: TaskResult = { status, reason, steps, verified: false, elapsedMs: Math.round(performance.now() - started),
-      tracePath: trace?.path, ...extra };
+      tracePath: trace?.path, diagnostic: { phase, actionOutcome, observationOutcome }, ...extra };
     trace?.full({ event: "outcome", step: attemptedStep, phase, result });
     trace?.record({ event: "finish", status, reason, elapsedMs: result.elapsedMs, step: steps });
     emit(`[deskhand] ${status}: ${reason} (${steps} actions, ${result.elapsedMs}ms)`);
@@ -79,7 +82,9 @@ export async function runTask(options: TaskOptions): Promise<TaskResult> {
     await driver.bind(appName);
     check();
     phase = "observe";
+    observationOutcome = "unavailable";
     let observation = await driver.observe();
+    observationOutcome = "available";
     observationSnapshot = snapshot("initial", observation);
     let unchanged = 0;
     const recentActions: string[] = [];
@@ -147,22 +152,30 @@ export async function runTask(options: TaskOptions): Promise<TaskResult> {
       if (options.dryRun !== false) return finish("dry_run", "preview_only", { decision, planned: action, target: targetSummary });
       // Jev HTTP latency can outlive the element indexes. Refresh, fail closed if anything changed.
       phase = "preflight_observe";
+      observationOutcome = "unavailable";
       const current = await driver.observe();
+      observationOutcome = "available";
       const preflightSnapshot = snapshot("preflight", current);
       check();
       if (current !== observation) return finish("escalate", "observation_changed_before_action");
       phase = "execute";
       outcomeUnknown = true;
       const t = performance.now();
+      actionOutcome = "not_dispatched";
+      observationOutcome = "not_attempted";
       await execute(driver, action, signal, (method, args) => {
+        actionOutcome = "unknown";
         trace?.full({ event: "dispatch_start", step, snapshotId: preflightSnapshot, appName, method, arguments: args, action, target: target ?? null });
       });
+      actionOutcome = "call_returned";
       steps++;
       trace.full({ event: "dispatch_return", step, methodReturned: true, completedCalls: steps, elapsedMs: Math.round(performance.now() - t) });
       check();
       phase = "post_action_observe";
       const previous = observation;
+      observationOutcome = "unavailable";
       observation = await driver.observe();
+      observationOutcome = "available";
       outcomeUnknown = false;
       observationSnapshot = snapshot("after_action", observation);
       check();
@@ -180,9 +193,12 @@ export async function runTask(options: TaskOptions): Promise<TaskResult> {
     }
     return finish("max_steps", "step_budget_exhausted");
   } catch (error) {
+    // A later observation failure must not erase a previously returned action call.
+    if (phase === "execute" && error instanceof SkyCallError && !error.diagnostics.dispatched) actionOutcome = "not_dispatched";
     // Only the explicitly enabled full local trace receives error text; public diagnostics stay structural.
     const result: TaskResult = { status: signal?.aborted ? "stop" : "error", reason: signal?.aborted ? "cancelled" : `${phase}_failed`, steps, verified: false,
       elapsedMs: Math.round(performance.now() - started), tracePath: trace?.path, outcomeUnknown,
+      diagnostic: { phase, actionOutcome, observationOutcome },
       ...(trace?.incomplete ? { traceIncomplete: true } : {}) };
     try {
       trace?.full({ event: "failure", step: attemptedStep, phase, outcomeUnknown,
