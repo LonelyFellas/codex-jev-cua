@@ -9,6 +9,10 @@ Desktop tools for [pi](https://pi.dev), powered by the installed Codex/Sky runti
 
 > **Experimental, macOS only.** Requires the Codex/Sky runtime and its permissions; those binaries are not included. Some Calculator tasks have been verified, but complex forms, browser controls, and multi-step workflows remain unreliable. Passing tests does not guarantee desktop task success.
 
+## Claude Code CLI (native)
+
+A local stdio MCP entry point, `deskhand-mcp`, reuses Codex/Sky without pi or Jev. Explicit tasks carry budgets and require human elicitation approval. Available in source version 0.4.0: [Claude Code setup (Chinese)](docs/claude-native/README.md). Check npm registry availability before using the published-package command. Live validation through Claude is still pending.
+
 ## Install
 
 ```bash

@@ -9,6 +9,10 @@
 
 > **实验项目，仅支持 macOS。** 需要 Codex/Sky 运行时及其权限，包内不包含这些二进制。已验证部分 Calculator 任务；复杂表单、浏览器控件和多步流程仍不可靠。测试通过不代表桌面任务一定成功。
 
+## Claude Code CLI（native）
+
+新增本地 stdio MCP 入口 `deskhand-mcp`，复用 Codex/Sky，不依赖 pi，不调用 Jev。使用显式任务预算和用户 elicitation 确认。源码版本 0.4.0 起支持，见[Claude Code 接入说明](docs/claude-native/README.md)；使用 npm 安装前先确认 registry 版本可用。Claude 实机验收尚未完成。
+
 ## 安装
 
 ```bash
