@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { launchApp, launchArguments, launchAppSpec, LaunchAppError } from "../src/mcp/launch-app.ts";
+import { launchApp, launchArguments, launchAppSpec, LaunchAppError } from "../src/launch-app.ts";
 import { NativeMcpSession, type Dependencies } from "../src/mcp/session.ts";
 import { createNativeMcpServer } from "../src/mcp/server.ts";
 import { nativeSpecs } from "../src/native-specs.ts";

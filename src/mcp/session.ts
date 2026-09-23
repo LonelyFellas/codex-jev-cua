@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { versionStatus } from "./version.ts";
-import { launchApp, launchArguments, LaunchAppError, type AppIdentityType } from "./launch-app.ts";
+import { launchApp, launchArguments, LaunchAppError, type AppIdentityType } from "../launch-app.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,7 @@ import { SkyClient, newTurnIdentity, type SkyContent } from "../sky/client.ts";
 import { resolveSkyRuntime } from "../sky/runtime.ts";
 import { SkyCallError, actionOutcome } from "../sky/diagnostics.ts";
 import { TaskBudget, TaskBudgetError } from "../task-budget.ts";
-import { formatNativeResult, newSnapshot, validateNativeAction, canReuseActionState, type NativeSnapshot } from "../native-state.ts";
+import { formatNativeResult, newSnapshot, validateNativeAction, canReuseActionState, type NativeSnapshot, type NativeRecovery } from "../native-state.ts";
 import type { NativeSpec } from "../native-specs.ts";
 import type { SkyCaller } from "../sky-driver.ts";
 
@@ -36,6 +36,7 @@ export class NativeMcpSession {
   private readonly sessionId = randomUUID();
   private task?: { id: string; app: string; identity: ReturnType<typeof newTurnIdentity>; budget: TaskBudget; controller: AbortController };
   private snapshot?: NativeSnapshot;
+  private recovery?: NativeRecovery;
   private client?: ReturnType<Dependencies["client"]>;
   private busy = false;
   private generation = 0;
@@ -53,7 +54,7 @@ export class NativeMcpSession {
       accessManagement: { version: 1, cliPath: fileURLToPath(new URL("./access.js", import.meta.url)), appsFile: appGrantsPath(config.envFile) },
       officialApproval: "runtime-controlled-via-client-elicitation", busy: this.busy,
       task: this.task ? { id: this.task.id, app: this.task.app, budget: this.task.budget.status() } : null,
-      lastDiagnostic: this.lastDiagnostic };
+      lastDiagnostic: this.lastDiagnostic, recovery: this.recovery ?? null };
   }
   async begin(app: string, goal: string, signal: AbortSignal, confirm: Confirm) {
     if (this.busy || this.task) throw new Error("Task active/busy. Do not replace a task to renew its budget; finish it first.");
@@ -79,7 +80,7 @@ export class NativeMcpSession {
   close() {
     this.generation++;
     this.task?.controller.abort(); this.task = undefined; this.snapshot = undefined;
-    this.client?.close(); this.client = undefined;
+    this.client?.close(); this.client = undefined; this.recovery = undefined;
   }
   async execute(spec: NativeSpec, args: Record<string, unknown>, signal: AbortSignal, confirm: Confirm): Promise<{ content: SkyContent[]; diagnostic: unknown; stateId?: string }> {
     if (this.busy) throw new Error("Desktop busy; do not overlap calls or other computer-use channels.");
@@ -87,6 +88,8 @@ export class NativeMcpSession {
     if (!task || task.id !== args.taskId) throw new Error("A user-confirmed taskId is required. Use cua_task_begin for a new authorized task.");
     if (spec.method !== "list_apps" && args.app !== task.app) throw new Error("Task is bound to one app; cannot expand scope.");
     this.checkApp(task.app);
+    const recovering = this.recovery;
+    if (recovering && spec.method !== "get_app_state") throw new Error("Recovery pending: only cua_get_app_state for the task app is allowed. Do not replay actions or launch an app. Inspect the actual outcome first.");
     const launching = spec.method === "launch_app";
     if (launching) launchArguments(args.app as string, args.identityType as AppIdentityType);
     const previous = this.snapshot;
@@ -118,6 +121,7 @@ export class NativeMcpSession {
       }
       this.client ??= this.deps.client();
       const { taskId: _task, stateId: _state, ...nativeArgs } = args;
+      if (recovering) nativeArgs.disableDiff = true;
       submitted = true;
       const raw = await this.client.callSky(spec.method, nativeArgs, task.identity, combined, async (message, approvalSignal) => {
         // Only a live client elicitation can grant the official request; never a tool argument.
@@ -130,7 +134,9 @@ export class NativeMcpSession {
       bridge = formatNativeResult(raw);
       if (spec.method === "get_app_state" || (!spec.readOnly && canReuseActionState(previous, bridge))) {
         this.snapshot = newSnapshot(task.app, task.identity.turnId, bridge);
+        if (spec.method === "get_app_state") this.recovery = undefined;
       }
+      if (recovering) bridge.content.unshift({ type: "text", text: `Recovery observation: ${JSON.stringify(recovering)}. Inspect actual state to determine whether the previous operation took effect. A fresh stateId does not prove it failed or succeeded. Never automatically replay it; ask the user if the outcome remains ambiguous.` });
       this.lastDiagnostic = { ...diagnostic as object, observationOutcome: this.snapshot ? "available" : "not_reusable",
         formatMs: Math.round(performance.now() - formatStarted), budget: task.budget.status() };
       const stateId = this.snapshot?.id;
@@ -146,8 +152,13 @@ export class NativeMcpSession {
         actionOutcome: error instanceof SkyCallError ? actionOutcome(error.diagnostics, !spec.readOnly) : spec.readOnly ? "not_applicable" : submitted ? "unknown" : "not_dispatched",
         observationOutcome: "unavailable", bridge: error instanceof SkyCallError ? error.diagnostics : undefined,
         reason: signal.aborted ? "cancelled" : budgetError?.code
-          ?? (task.budget.status().remainingMs === 0 ? "task_deadline_exceeded" : error instanceof LaunchAppError ? error.code : "desktop_call_failed"),
+          ?? (task.budget.status().remainingMs === 0 ? "task_deadline_exceeded" : error instanceof LaunchAppError ? error.code : error instanceof SkyCallError ? error.diagnostics.code ?? "desktop_call_failed" : "desktop_call_failed"),
         budget: task.budget.status() };
+      if (error instanceof SkyCallError && error.diagnostics.code === "state_changed" && !["declined", "cancelled"].includes(error.diagnostics.approval) && !signal.aborted && !task.controller.signal.aborted && !lease?.signal.aborted && task.budget.status().remainingMs > 0) {
+        this.snapshot = undefined;
+        this.recovery = recovering ?? { app: task.app, failedMethod: spec.method, previousActionOutcome: spec.readOnly ? "not_applicable" : "unknown" };
+        throw new Error(`Desktop state changed. Task and remaining budget preserved; only re-observe the same app using cua_get_app_state. Do not automatically replay any operation. Recovery: ${JSON.stringify(this.recovery)}. Diagnostic: ${JSON.stringify(this.lastDiagnostic)}`);
+      }
       this.close();
       throw new Error(`Desktop task stopped. No replay. Diagnostic: ${JSON.stringify(this.lastDiagnostic)}`);
     } finally { lease?.finish(); this.busy = false; }

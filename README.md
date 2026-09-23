@@ -40,17 +40,20 @@ Node.js **22.19+** is required. The package has been load-tested with pi **0.86.
 | Entry | Purpose |
 |---|---|
 | `cua_status` | Check mode, app scope, and runtime availability—not system permission status |
+| `cua_launch_app` | From 0.7.0, launch any installed app by exact registered name or Bundle ID in native mode; no old stateId needed |
 | `cua_get_app_state` | Read app/window/menu state and available screenshots |
 | `cua_*` action tools | Click, drag, press keys, scroll, select or enter text |
 | `jev_cua_observe` | Compatibility text-only observation; no Jev call |
 | `jev_cua_run` | Jev-only loop; `dryRun: true` previews without desktop actions, but still calls TypeSafe |
 | `/skill:jev-codex-cua` | Load the agent's usage instructions |
 
-Native actions require a fresh `stateId` for the same app, from `cua_get_app_state` or a validated full action-returned observation. Tokens remain single-use, valid for 60 seconds within the current agent turn, and invalidated by another observation or mode change. If an action returns a NEW stateId, inspect that state and continue without a duplicate read; otherwise observe again. Do not run other computer-use channels in parallel.
+Launching invalidates old state and requires observing the window afterward; acceptance is not proof of readiness. Other native UI actions require a fresh `stateId` for the same app, from `cua_get_app_state` or a validated full action-returned observation. Tokens remain single-use, valid for 60 seconds within the current agent turn, and invalidated by another observation or mode change. If an action returns a NEW stateId, inspect that state and continue without a duplicate read; otherwise observe again. Do not run other computer-use channels in parallel.
 
 Native/Jev share a hard **180-second / 30-action-attempt** budget per agent turn, including inter-call gaps and official approval wait. Mode changes and reconnections do not renew it. `cua_status` exposes the remaining budget and last diagnostic. See [outcomes, timings and state reuse (Chinese)](docs/native-diagnostics/README.md).
 
 Mode choices persist in the current pi session branch. Missing Jev credentials cause fallback to native; adding a key later does not silently re-enable Jev. Mode changes are refused while a task is running.
+
+From 0.7.0, pi native and Claude MCP support application-independent `state_changed` recovery: retain remaining budget, invalidate old state, and allow only a fresh observation of the same app until it succeeds. Inspect actual results before choosing a new action; never automatically replay the failed operation. Ask the user when the outcome remains ambiguous. See the [launch and recovery design](docs/claude-launch/design.md).
 
 ## Configuration
 

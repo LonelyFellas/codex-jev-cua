@@ -41,6 +41,14 @@ Agent 先以准确应用名或 Bundle ID 建立任务，在一次任务确认后
 
 发布后通过 `/plugin` 更新并重启。先用“打开 Calculator 并只读取窗口，不点击、不输入”验收，确认既能启动也能观察；本版本仍需真实桌面验收，自动化仅模拟启动，不会打开用户应用。
 
+## 通用 state_changed 恢复
+
+0.7.0 的 native 调用遇到 `state_changed` 时，不再直接结束整个任务：旧状态失效，原 taskId 与剩余时间/动作预算保留，状态显示 `recovery`。此时仅允许同应用的 `cua_get_app_state`；不自动启动、点击、输入或重新发送失败操作。成功读取后，Agent 先核对当前可见结果，再选择必要的新动作；结果无法确认时询问用户。此机制适用于所有应用，不包含飞书、微信或聊天场景专用逻辑。
+
+取消、官方拒绝、超时或其他底层错误仍停止；重新观察不会恢复已耗尽预算。新状态只证明观察成功，不证明上次写操作成功或失败。
+
+pi native 同步提供相同恢复及 `cua_launch_app`，但 pi 安装与 Claude Plugin 独立。发布后需单独 `pi update npm:jev-codex-cua` 并 `/reload`；固定旧版本的安装应显式安装新版本。pi 不使用 MCP taskId，而是沿用本轮预算。
+
 ## 从手动安装迁移
 
 先核对 `/mcp` 和旧服务器的来源、scope、自定义环境变量。经用户确认后禁用/移除旧 Deskhand MCP，再安装 Plugin，避免两个实例。自定义 `DESKHAND_CONFIG_FILE` 等设置需要用户按 Claude 支持的配置方式保留，不能静默丢弃或复制。默认授权文件仍位于原来的 `~/.config/deskhand/`，无需搬迁。

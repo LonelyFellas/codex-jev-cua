@@ -3,6 +3,11 @@ import { truncateHead } from "./bounded-text.ts";
 import type { SkyContent, SkyResult } from "./sky/client.ts";
 import { SkyCallError, responseCode } from "./sky/diagnostics.ts";
 
+export interface NativeRecovery {
+  app: string;
+  failedMethod: string;
+  previousActionOutcome: "unknown" | "not_applicable";
+}
 export interface NativeSnapshot {
   id: string;
   app: string;

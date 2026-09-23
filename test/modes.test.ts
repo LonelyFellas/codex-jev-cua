@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { loadPiConfig } from "../src/pi-config.ts";
 import { appAccessPath, setAppAccessGrant } from "../src/app-access-grants.ts";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerJevCodexCua } from "../src/pi-extension.ts";
+import { registerJevCodexCua, type ExtensionDependencies } from "../src/pi-extension.ts";
 import { formatNativeResult, newSnapshot, validateNativeAction } from "../src/native-state.ts";
 import { nativeToolNames } from "../src/native-tools.ts";
 import type { PiConfig } from "../src/pi-config.ts";
@@ -14,7 +14,7 @@ import type { SkyResult } from "../src/sky/client.ts";
 
 const AX = "0 standard window Calculator\n1 button 6\n2 text field (settable) Value: 0\nThe focused UI element is 2 text field";
 type Entry = { type: "custom"; customType: string; data: unknown };
-function setup(options: { config?: PiConfig | (() => PiConfig); entries?: Entry[]; hasUI?: boolean; approved?: boolean; nativeApproval?: boolean } = {}) {
+function setup(options: { config?: PiConfig | (() => PiConfig); entries?: Entry[]; hasUI?: boolean; approved?: boolean; nativeApproval?: boolean; launch?: ExtensionDependencies["launchApp"]; budgetLimits?: ExtensionDependencies["budgetLimits"] } = {}) {
   let config = options.config ?? { allowedApps: ["Calculator", "Google Chrome"], envFile: "/unused" };
   const tools = new Map<string, ToolDefinition>();
   const commands = new Map<string, { handler(args: string, ctx: ExtensionCommandContext): Promise<void> }>();
@@ -24,8 +24,10 @@ function setup(options: { config?: PiConfig | (() => PiConfig); entries?: Entry[
   const notices: string[] = [];
   const calls: { method: string; args: Record<string, unknown>; turnId: string }[] = [];
   let created = 0; let closed = 0; let approvals = 0;
+  const launches: string[] = [];
   let nativeResult: SkyResult = { content: [{ type: "text", text: AX }, { type: "image", mimeType: "image/png", data: "AA==" }] };
   let beforeRead: (() => Promise<void>) | undefined;
+  let actionResult: SkyResult | undefined;
   const ctx = { hasUI: options.hasUI ?? true, model: { id: "test-model" }, thinkingLevel: "low",
     sessionManager: { getSessionId: () => "test-session", getBranch: () => entries },
     ui: { notify(message: string) { notices.push(message); }, async confirm() { approvals++; return options.approved ?? true; } },
@@ -37,26 +39,111 @@ function setup(options: { config?: PiConfig | (() => PiConfig); entries?: Entry[
     sendMessage(message: { content: string }) { notices.push(message.content); },
     on(name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) { handlers.set(name, handler); },
   } as unknown as ExtensionAPI;
-  registerJevCodexCua(pi, { config: () => typeof config === "function" ? config() : config, runtimeCheck() {}, client: () => {
+  registerJevCodexCua(pi, { config: () => typeof config === "function" ? config() : config, runtimeCheck() {}, budgetLimits: options.budgetLimits,
+    launchApp: async (app, identityType, signal) => { launches.push(`${identityType}:${app}`); await options.launch?.(app, identityType, signal); }, client: () => {
     created++;
     return { async callSky(method, args, turn, signal, approve) {
       calls.push({ method, args, turnId: turn.turnId });
       if (options.nativeApproval && !await approve?.("Allow Calculator?", signal ?? new AbortController().signal)) return { isError: true, content: [{ type: "text", text: "App approval declined" }] };
       if (method === "get_app_state") { await beforeRead?.(); return nativeResult; }
-      return { content: [{ type: "text", text: "Action returned; observe to verify." }] };
+      return actionResult ?? { content: [{ type: "text", text: "Action returned; observe to verify." }] };
     }, close() { closed++; } };
   } });
   const emit = (event: string) => handlers.get(event)?.({}, ctx);
   emit("session_start");
-  return { calls, tools, notices, entries, emit,
+  return { calls, tools, notices, entries, emit, launches,
     get active() { return active; }, get created() { return created; }, get closed() { return closed; }, get approvals() { return approvals; },
-    setConfig(next: PiConfig) { config = next; }, setResult(next: SkyResult) { nativeResult = next; },
+    setConfig(next: PiConfig) { config = next; }, setResult(next: SkyResult) { nativeResult = next; }, setActionResult(next: SkyResult) { actionResult = next; },
     pauseRead(callback: () => Promise<void>) { beforeRead = callback; },
     command: (args: string) => commands.get("cua-mode")!.handler(args, ctx as ExtensionCommandContext),
-    call: (name: string, args: Record<string, unknown> = {}) => tools.get(name)!.execute("id", args, undefined, undefined, ctx),
+    call: (name: string, args: Record<string, unknown> = {}, signal?: AbortSignal) => tools.get(name)!.execute("id", args, signal, undefined, ctx),
   };
 }
 function stateId(result: { details?: unknown }): string { return (result.details as { stateId: string }).stateId; }
+
+test("pi launch opens arbitrary exact names and IDs without Sky or TypeSafe", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("No TypeSafe"); });
+  const h = setup({ config: { appAccess: "all", allowedApps: [], envFile: "/unused" } });
+  assert.ok(h.active.includes("cua_launch_app"));
+  const schema = h.tools.get("cua_launch_app")!.parameters as { properties: { identityType: { type: string; enum: string[] } } };
+  assert.deepEqual(schema.properties.identityType.enum, ["name", "bundleId"]);
+  assert.equal(schema.properties.identityType.type, "string");
+  for (const [app, identityType] of [["Safari", "name"], ["WeChat", "name"], ["飞书", "name"], ["com.apple.TextEdit", "bundleId"]]) {
+    const result = await h.call("cua_launch_app", { app, identityType });
+    assert.match(JSON.stringify(result), /launch_request_accepted/);
+    assert.equal(stateId(result), undefined);
+  }
+  assert.equal(h.launches.length, 4); assert.equal(h.created, 0); assert.equal(h.calls.length, 0);
+  assert.equal(h.approvals, 0);
+  const observed = await h.call("cua_get_app_state", { app: "Safari" });
+  await h.call("cua_launch_app", { app: "Safari", identityType: "name" });
+  await assert.rejects(h.call("cua_click", { app: "Safari", stateId: stateId(observed), element_index: 1 }), /stale/);
+});
+
+test("pi launch enforces scope, mode, budget and cancellation", async () => {
+  const h = setup({ config: { mode: "native", apiKey: "synthetic", allowedApps: ["Calculator"], envFile: "/unused" }, budgetLimits: { durationMs: 180000, maxActions: 1 } });
+  await assert.rejects(h.call("cua_launch_app", { app: "Safari", identityType: "name" }), /not allowed/);
+  await h.command("jev");
+  assert.ok(!h.active.includes("cua_launch_app"));
+  await assert.rejects(h.call("cua_launch_app", { app: "Calculator", identityType: "name" }), /native-mode only/);
+  await h.command("native");
+  await h.call("cua_launch_app", { app: "Calculator", identityType: "name" });
+  await assert.rejects(h.call("cua_launch_app", { app: "Calculator", identityType: "name" }), /action_budget_exhausted/);
+  assert.equal(h.launches.length, 1);
+  const cancelled = setup(); const controller = new AbortController(); controller.abort();
+  await assert.rejects(cancelled.call("cua_launch_app", { app: "Calculator", identityType: "name" }, controller.signal));
+  assert.equal(cancelled.launches.length, 0);
+});
+
+test("pi launch failures stop fallback and concurrent launch is rejected", async () => {
+  let release!: () => void;
+  const h = setup({ launch: async () => new Promise<void>(resolve => { release = resolve; }) });
+  const running = h.call("cua_launch_app", { app: "Calculator", identityType: "name" });
+  await assert.rejects(h.call("cua_launch_app", { app: "Calculator", identityType: "name" }), /busy/);
+  release(); await running;
+  const failed = setup({ launch: async () => { throw new Error("private stderr"); } });
+  await assert.rejects(failed.call("cua_launch_app", { app: "Calculator", identityType: "name" }), error => {
+    assert.match(String(error), /launch_failed/); assert.ok(!String(error).includes("private stderr")); return true;
+  });
+  await assert.rejects(failed.call("cua_launch_app", { app: "Calculator", identityType: "name" }), /blocked/);
+  assert.equal(failed.launches.length, 1);
+});
+
+test("pi state_changed recovery is app-independent, observation-only and retains action budget", async () => {
+  for (const app of ["Mail", "TextEdit", "Safari"]) {
+    const h = setup({ config: { appAccess: "all", allowedApps: [], envFile: "/unused" }, budgetLimits: { durationMs: 180000, maxActions: 1 } });
+    const observed = await h.call("cua_get_app_state", { app });
+    h.setActionResult({ isError: true, content: [{ type: "text", text: `The user changed '${app}'. Re-query the latest state` }] });
+    await assert.rejects(h.call("cua_type_text", { app, stateId: stateId(observed), text: "test" }), /only re-observe/);
+    const status = (await h.call("cua_status")).details as { recovery: unknown; taskBudget: { actions: number } };
+    assert.deepEqual(status.recovery, { app, failedMethod: "type_text", previousActionOutcome: "unknown" });
+    assert.equal(status.taskBudget.actions, 1); assert.equal(h.closed, 0);
+    const count = h.calls.length;
+    for (const [tool, args] of [["cua_type_text", { app, text: "test" }], ["cua_launch_app", { app, identityType: "name" }], ["cua_list_apps", {}], ["cua_get_app_state", { app: "Other" }], ["jev_cua_observe", { appName: app }]] as [string, Record<string, unknown>][]) {
+      await assert.rejects(h.call(tool, args), /Recovery pending/);
+    }
+    assert.equal(h.calls.length, count); assert.equal(h.launches.length, 0);
+    h.setResult({ isError: true, content: [{ type: "text", text: `The user changed '${app}'. Re-query the latest state` }] });
+    await assert.rejects(h.call("cua_get_app_state", { app }), /only re-observe/);
+    assert.deepEqual(((await h.call("cua_status")).details as { recovery: unknown }).recovery, status.recovery);
+    h.setResult({ content: [{ type: "text", text: AX }] });
+    const fresh = await h.call("cua_get_app_state", { app });
+    assert.ok(stateId(fresh)); assert.notEqual(stateId(fresh), stateId(observed));
+    assert.equal(h.calls.at(-1)?.args.disableDiff, true);
+    assert.match(JSON.stringify(fresh.content), /previous operation took effect/);
+    assert.equal(((await h.call("cua_status")).details as { recovery: unknown }).recovery, null);
+    await assert.rejects(h.call("cua_click", { app, stateId: stateId(fresh), element_index: 1 }), /action_budget_exhausted/);
+    assert.equal(h.calls.filter(c => c.method === "type_text").length, 1);
+  }
+});
+
+test("pi official denial never enables launch or recovery", async () => {
+  const h = setup({ nativeApproval: true, approved: false });
+  await assert.rejects(h.call("cua_get_app_state", { app: "Calculator" }));
+  assert.equal(((await h.call("cua_status")).details as { recovery: unknown }).recovery, null);
+  await assert.rejects(h.call("cua_launch_app", { app: "Calculator", identityType: "name" }), /blocked/);
+  assert.equal(h.launches.length, 0);
+});
 
 test("default native mode needs no key, does not call Jev and uses one shared client/turn", async (t) => {
   t.mock.method(globalThis, "fetch", async () => { throw new Error("Native must not contact TypeSafe"); });
@@ -144,7 +231,7 @@ test("native stale, cross-app, unknown-index and mixed click targets are rejecte
 test("the complete native action surface routes through the same client without any TypeSafe call", async (t) => {
   t.mock.method(globalThis, "fetch", async () => { throw new Error("must not call"); });
   const h = setup();
-  assert.equal(nativeToolNames.length, 10);
+  assert.equal(nativeToolNames.length, 11);
   const actions: [string, Record<string, unknown>][] = [
     ["cua_click", { element_index: 1 }], ["cua_drag", { from_x: 1, from_y: 1, to_x: 2, to_y: 2 }],
     ["cua_perform_secondary_action", { element_index: 1, action: "Press" }], ["cua_press_key", { key: "Tab" }],
