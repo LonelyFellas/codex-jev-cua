@@ -13,6 +13,10 @@
 
 新增本地 stdio MCP 入口 `deskhand-mcp`，复用 Codex/Sky，不依赖 pi，不调用 Jev。使用显式任务预算和用户 elicitation 确认。源码版本 0.4.0 起支持，见[Claude Code 接入说明](docs/claude-native/README.md)；使用 npm 安装前先确认 registry 版本可用。Claude 实机验收尚未完成。
 
+**0.5.0 起，Claude MCP 全新安装默认 `all`（全应用），已有显式白名单不变；已发布 0.4.0 仍是旧默认。** [完整安装指南](docs/claude-native/README.md)包含 MCP 安装、Skill 安装、全应用权限开启与验证步骤，系统/Sky 权限仍需用户批准。
+
+Claude 专用权限 Skill（0.5.0 起，发布状态以 npm registry 为准）支持 `/deskhand-access add WeChat`、`/deskhand-access all` 和 `/deskhand-access allowlist`。需单独显式安装，并更新 MCP；见[Skill 安装与权限流程](docs/claude-native/README.md#通过-skill-管理应用权限)。不会修改 pi 权限或绕过系统授权。
+
 ## 安装
 
 ```bash

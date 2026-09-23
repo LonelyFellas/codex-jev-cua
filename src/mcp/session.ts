@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { appGrantsPath } from "../app-grants.ts";
 import { loadPiConfig, type PiConfig } from "../pi-config.ts";
 import { validateAppName } from "../app-grants.ts";
 import { SkyClient, newTurnIdentity, type SkyContent } from "../sky/client.ts";
@@ -22,7 +24,8 @@ export function nativeConfig(env: NodeJS.ProcessEnv = process.env, home = homedi
   // Separate host config; never inherit the pi-specific file path or enable Jev.
   const config = loadPiConfig({ ...env, JEV_CUA_ENV_FILE: env.DESKHAND_CONFIG_FILE,
     JEV_CUA_MODE: "native" }, file);
-  return { ...config, apiKey: undefined, mode: "native", appAccess: config.appAccessSource === "default" ? "allowlist" : config.appAccess };
+  // Native defaults to all, while explicit grant/environment/file choices retain precedence.
+  return { ...config, apiKey: undefined, mode: "native" };
 }
 export const defaults: Dependencies = { config: nativeConfig, client: () => new SkyClient(resolveSkyRuntime()) };
 export class NativeMcpSession {
@@ -44,6 +47,7 @@ export class NativeMcpSession {
     const config = this.deps.config();
     return { host: "mcp", mode: "native", appAccess: config.appAccess, allowedApps: config.allowedApps,
       envFile: config.envFile, appAccessFile: config.appAccessFile, appAccessSource: config.appAccessSource,
+      accessManagement: { version: 1, cliPath: fileURLToPath(new URL("./access.js", import.meta.url)), appsFile: appGrantsPath(config.envFile) },
       officialApproval: "runtime-controlled-via-client-elicitation", busy: this.busy,
       task: this.task ? { id: this.task.id, app: this.task.app, budget: this.task.budget.status() } : null,
       lastDiagnostic: this.lastDiagnostic };

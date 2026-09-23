@@ -1,6 +1,6 @@
 {
   "name": "jev-codex-cua",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "license": "MIT",
   "description": "Experimental Codex Sky desktop tools: native MCP for Claude Code, plus pi native/optional Jev modes",
   "repository": {
@@ -19,13 +19,15 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "deskhand-mcp": "./dist/mcp/cli.js"
+    "deskhand-mcp": "./dist/mcp/cli.js",
+    "deskhand-install-claude-skill": "./dist/mcp/install-access-skill.js"
   },
   "files": [
     "dist",
     "src",
     "skill",
     "skills",
+    "claude-skills",
     "fixtures",
     "docs",
     "README.md",
