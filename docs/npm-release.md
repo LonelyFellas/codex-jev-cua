@@ -83,7 +83,7 @@ npm test
 npm run test:package
 ```
 
-`test:package` 触发 npm pack/prepack，安装 tarball 到临时目录，通过 pi 加载器验证 14 个工具、模式命令和 3 个 Skill，以及编译后 API、无开发依赖的应用范围 CLI 和授权文件打包排除规则。消费者采用 omit=dev、ignore-scripts、offline；legacy-peer-deps 仅模拟宿主提供 peer，不是绕过发布门禁。
+`test:package` 触发 npm pack/prepack，安装 tarball 到临时目录，通过 pi 加载器验证 14 个工具、模式命令和 3 个 Skill，以及编译后 API、无开发依赖的应用范围 CLI 和授权文件打包排除规则。消费者采用 omit=dev、ignore-scripts、prefer-offline；MCP 运行依赖可能需要访问 npm registry。legacy-peer-deps 仅模拟宿主提供 peer，不是绕过发布门禁。另验证不安装 pi 的消费者可通过 stdio 完成 MCP 握手、发现 13 个 native 工具及读取状态；不访问真实桌面。
 
 可选实机测试必须显式授权并传 `--live`，不在 CI 中运行。`accept:app-access` 为真实 Sky 只读范围验收；`accept:handoff` 会操作 Calculator 且包含模拟决策。边界见 [本地验收](local-acceptance.md)。
 
@@ -91,7 +91,7 @@ npm run test:package
 
 遵循 [pi 包规范](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md)：`keywords` 包含 pi-package，pi.extensions 指向 src/pi-extension.ts，pi.skills 指向 skills/。默认 native，只有显式 jev 模式调用 TypeSafe；一个包共用 Sky 桥接。
 
-宿主 pi/typebox 使用 peerDependencies，开发依赖独立锁定；不打包宿主副本。白名单包含源码、预构建 dist、Skills、fixtures、文档及许可；不包含密钥、应用授权、轨迹、测试、node_modules。prepack 构建 dist，消费者无需自行编译。
+宿主 pi 使用可选 peerDependencies，开发依赖独立锁定；不打包宿主副本。typebox 与官方 MCP SDK 为运行依赖，使 native MCP 入口无需安装 pi。白名单包含源码、预构建 dist、Skills、fixtures、文档及许可；不包含密钥、应用授权、轨迹、测试、node_modules。prepack 构建 dist，消费者无需自行编译。
 
 新增代码采用 MIT；第三方 ISC/MIT 声明及原桥接版权保留在 NOTICE.md、THIRD_PARTY_LICENSES.md 和原授权文件中。发布不改变许可证或原作者归属。
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { truncateHead } from "@earendil-works/pi-coding-agent";
+import { truncateHead } from "./bounded-text.ts";
 import type { SkyContent, SkyResult } from "./sky/client.ts";
 import { SkyCallError, responseCode } from "./sky/diagnostics.ts";
 

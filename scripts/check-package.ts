@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { discoverAndLoadExtensions, loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
 import { nativeToolNames } from "../src/native-tools.ts";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
@@ -15,9 +17,10 @@ function npm(args: string[], cwd: string) {
 }
 try {
   assert.ok(manifest.keywords.includes("pi-package"));
-  for (const peer of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "typebox"]) {
+  for (const peer of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent"]) {
     assert.equal(manifest.peerDependencies[peer], "*");
     assert.equal(manifest.dependencies?.[peer], undefined, "Host pi packages must remain peers, not bundled dependencies.");
+    assert.equal(manifest.peerDependenciesMeta?.[peer]?.optional, true);
   }
   // Exercise the real prepack lifecycle, including building dist. No publish command is used.
   npm(["pack", "--json", "--pack-destination", temporary], root);
@@ -32,9 +35,28 @@ try {
   mkdirSync(consumer);
   // Emulate a consumer without dev dependencies or lifecycle scripts. Pi supplies its own
   // peer packages; legacy-peer-deps avoids downloading a second host into this isolated test.
-  npm(["install", "--prefix", consumer, "--omit=dev", "--ignore-scripts", "--legacy-peer-deps", "--offline", "--no-audit", "--no-fund", tarball], consumer);
+  // Runtime MCP dependencies require registry metadata not populated by npm ci; allow normal
+  // dependency resolution while preferring cache. This does not call model APIs or Sky.
+  npm(["install", "--prefix", consumer, "--omit=dev", "--ignore-scripts", "--legacy-peer-deps", "--prefer-offline", "--no-audit", "--no-fund", tarball], consumer);
   const installed = join(consumer, "node_modules", manifest.name);
   assert.ok(existsSync(join(installed, "dist/index.js")));
+  assert.equal(manifest.bin["deskhand-mcp"], "./dist/mcp/cli.js");
+  assert.ok(manifest.dependencies.typebox);
+  assert.equal(existsSync(join(consumer, "node_modules/@earendil-works/pi-coding-agent")), false);
+  const mcpConfig = join(consumer, "mcp.env");
+  writeFileSync(mcpConfig, "JEV_CUA_APP_ACCESS=allowlist\nJEV_CUA_ALLOWED_APPS=Calculator\n", { mode: 0o600 });
+  const mcp = new Client({ name: "package-test", version: "1" });
+  const transport = new StdioClientTransport({ command: process.execPath, args: [join(installed, "dist/mcp/cli.js")],
+    env: { PATH: process.env.PATH ?? "", HOME: consumer, DESKHAND_CONFIG_FILE: mcpConfig }, stderr: "pipe" });
+  try {
+    await mcp.connect(transport);
+    assert.equal((await mcp.listTools()).tools.length, 13);
+    const status = await mcp.callTool({ name: "cua_status", arguments: {} });
+    assert.equal(status.isError, undefined);
+    assert.equal(JSON.parse((status.content as { text: string }[])[0]!.text).mode, "native");
+    const blocked = await mcp.callTool({ name: "cua_task_begin", arguments: { app: "Calculator", goal: "synthetic no-approval test" } });
+    assert.equal(blocked.isError, true, "Headless client without elicitation must never start Sky.");
+  } finally { await mcp.close(); await transport.close(); }
   assert.equal(existsSync(join(consumer, "node_modules", "typescript")), false);
   const packedManifest = JSON.parse(readFileSync(join(installed, "package.json"), "utf8"));
   const loaded = await discoverAndLoadExtensions(packedManifest.pi.extensions.map((relative: string) => join(installed, relative)), consumer, join(temporary, "agent"));
@@ -72,7 +94,7 @@ try {
     decide: async () => ({ action: "click_element", targetIndex: 1, confidence: 1, done: 0, risk: 0 }),
   });
   assert.equal(result.status, "dry_run");
-  console.log(`Package verification passed: ${manifest.name}@${manifest.version}; 14 registered tools, 3 skills, mode command, compiled API and access CLI, no consumer dev dependencies.`);
+  console.log(`Package verification passed: ${manifest.name}@${manifest.version}; 14 registered tools, 3 skills, mode command, compiled API, access CLI and native MCP stdio without pi installed, no consumer dev dependencies.`);
   console.log("No API calls, desktop actions, global pi settings changes or npm publication occurred.");
 } finally {
   rmSync(temporary, { recursive: true, force: true });
