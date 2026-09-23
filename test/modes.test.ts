@@ -61,6 +61,28 @@ function setup(options: { config?: PiConfig | (() => PiConfig); entries?: Entry[
 }
 function stateId(result: { details?: unknown }): string { return (result.details as { stateId: string }).stateId; }
 
+test("pi native exceeds the old 180s/30-action cap while Jev keeps its limits", async (t) => {
+  let now = 0; t.mock.method(performance, "now", () => now);
+  const h = setup({ config: { mode: "native", apiKey: "synthetic", allowedApps: ["Calculator"], envFile: "/unused" } });
+  for (let i = 0; i < 40; i++) {
+    await h.call("cua_launch_app", { app: "Calculator", identityType: "name" });
+    now += 10000;
+  }
+  const native = (await h.call("cua_status")).details as { taskBudget: { actions: number; durationMs: number | null; maxActions: number | null; remainingMs: number | null } };
+  assert.equal(native.taskBudget.actions, 40);
+  assert.equal(native.taskBudget.durationMs, null); assert.equal(native.taskBudget.maxActions, null); assert.equal(native.taskBudget.remainingMs, null);
+  // Unlimited accounting must still permit state_changed's read-only recovery.
+  h.setResult({ isError: true, content: [{ type: "text", text: "The user changed 'Calculator'. Re-query the latest state" }] });
+  await assert.rejects(h.call("cua_get_app_state", { app: "Calculator" }), /only re-observe/);
+  h.setResult({ content: [{ type: "text", text: AX }] });
+  await h.call("cua_get_app_state", { app: "Calculator" });
+  await h.command("jev");
+  const jev = (await h.call("cua_status")).details as typeof native;
+  assert.equal(jev.taskBudget.durationMs, 180000); assert.equal(jev.taskBudget.maxActions, 30);
+  assert.equal(jev.taskBudget.actions, 40); assert.equal(jev.taskBudget.remainingMs, 0);
+  await assert.rejects(h.call("cua_get_app_state", { app: "Calculator" }), /task_deadline_exceeded/);
+});
+
 test("pi launch opens arbitrary exact names and IDs without Sky or TypeSafe", async (t) => {
   t.mock.method(globalThis, "fetch", async () => { throw new Error("No TypeSafe"); });
   const h = setup({ config: { appAccess: "all", allowedApps: [], envFile: "/unused" } });

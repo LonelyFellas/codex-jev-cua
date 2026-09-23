@@ -68,6 +68,25 @@ test("MCP handshake advertises only native tools, validates args and forwards ex
   } finally { await client.close(); await server.close(); }
 });
 
+test("native MCP runs beyond the former duration and action caps", async (t) => {
+  let now = 0; t.mock.method(performance, "now", () => now);
+  const f = fixture(); const session = new NativeMcpSession(f.deps);
+  try {
+    const { taskId } = await session.begin("Calculator", "Long native task", signal(), async message => {
+      assert.match(message, /no total time cap/); assert.match(message, /no action-count cap/); return true;
+    });
+    for (let i = 0; i < 40; i++) {
+      now += 10000;
+      const observed = await session.execute(spec("cua_get_app_state"), { app: "Calculator", taskId }, signal(), async () => true);
+      await session.execute(spec("cua_click"), { app: "Calculator", taskId, stateId: observed.stateId, element_index: 1 }, signal(), async () => true);
+    }
+    const status = session.status();
+    assert.equal(status.task?.budget.actions, 40); assert.equal(status.task?.budget.durationMs, null);
+    assert.equal(status.task?.budget.maxActions, null); assert.equal(status.task?.budget.remainingMs, null);
+    assert.equal(status.task?.id, taskId);
+  } finally { session.close(); }
+});
+
 test("client without elicitation cannot start a task or reach Sky", async () => {
   const f = fixture(); const { server } = createNativeMcpServer(f.deps);
   const client = new Client({ name: "headless", version: "1" });

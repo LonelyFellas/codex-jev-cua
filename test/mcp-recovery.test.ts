@@ -88,6 +88,21 @@ for (const app of ["TextEdit", "Safari", "com.tencent.xinWeChat"]) {
   });
 }
 
+test("unlimited native MCP preserves read-only recovery after 180 seconds", async (t) => {
+  let now = 0; t.mock.method(performance, "now", () => now);
+  const f = fixture(); f.deps.limits = undefined; const s = f.session;
+  try {
+    const { taskId } = await s.begin("TextEdit", "Inspect", signal(), approval);
+    now = 400000; f.setResult(changed);
+    await assert.rejects(s.execute(spec("get_app_state"), { app: "TextEdit", taskId }, signal(), approval), /state changed/);
+    assert.equal(s.status().task?.id, taskId); assert.ok(s.status().recovery);
+    f.setResult(normal);
+    const fresh = await s.execute(spec("get_app_state"), { app: "TextEdit", taskId }, signal(), approval);
+    assert.ok(fresh.stateId); assert.equal(s.status().recovery, null);
+    assert.equal(s.status().task?.budget.remainingMs, null);
+  } finally { s.close(); }
+});
+
 test("MCP recovery does not reset elapsed time and stops at the original deadline", async (t) => {
   let now = 0; t.mock.method(performance, "now", () => now);
   const f = fixture(); const s = f.session;

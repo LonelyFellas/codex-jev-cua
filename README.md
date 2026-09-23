@@ -49,7 +49,7 @@ Node.js **22.19+** is required. The package has been load-tested with pi **0.86.
 
 Launching invalidates old state and requires observing the window afterward; acceptance is not proof of readiness. Other native UI actions require a fresh `stateId` for the same app, from `cua_get_app_state` or a validated full action-returned observation. Tokens remain single-use, valid for 60 seconds within the current agent turn, and invalidated by another observation or mode change. If an action returns a NEW stateId, inspect that state and continue without a duplicate read; otherwise observe again. Do not run other computer-use channels in parallel.
 
-Native/Jev share a hard **180-second / 30-action-attempt** budget per agent turn, including inter-call gaps and official approval wait. Mode changes and reconnections do not renew it. `cua_status` exposes the remaining budget and last diagnostic. See [outcomes, timings and state reuse (Chinese)](docs/native-diagnostics/README.md).
+From 0.7.1, **native has no task-level time or action-count cap**, in both pi and Claude MCP. Jev retains its **180-second / 30-action-attempt** budget. Mode changes do not reset elapsed time or action counts. Individual call timeouts, cancellation, state freshness and authorization remain enforced. `cua_status` uses `null` for uncapped limits/remaining amounts and still reports elapsed time, action counts and diagnostics. See [outcomes, timings and state reuse (Chinese)](docs/native-diagnostics/README.md).
 
 Mode choices persist in the current pi session branch. Missing Jev credentials cause fallback to native; adding a key later does not silently re-enable Jev. Mode changes are refused while a task is running.
 
