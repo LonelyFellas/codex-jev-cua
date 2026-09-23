@@ -21,6 +21,16 @@ Plugin 的 MCP 启动配置固定绑定同版本 npm 包，由 npx 获取依赖�
 - 用户要求检查更新时：`cua_status {"checkUpdates":true}`。只读取公开 npm latest 元数据，超时 5 秒；返回当前版本、最新已发布 MCP 版本、是否有新版和升级方式。失败返回 `unavailable`，不猜最新版本、不影响本地诊断。
 - 更新：打开 `/plugin`，刷新 `deskhand` marketplace 并更新已安装的 `deskhand@deskhand`；重启 Claude Code。MCP 与 Skill 同步更新。插件不自行运行更新命令，不写 Claude 配置、授权文件或系统权限；Claude 自身的自动更新策略由用户管理。
 
+## 0.6.1：单次 Accept 确认
+
+0.6.0 的确认表单同时要求勾选 `confirm` 并点击 Accept，造成部分 Claude 界面无法完成批准。0.6.1 去掉复选框，弹窗显示具体任务/官方申请，**直接选择 Accept 即批准该次请求**；Decline 或 Cancel 仍停止，不自动重试。任务确认与 Sky 官方确认仍是独立请求，不会因为上一次 Accept 或 `appAccess=all` 而自动批准后续申请。
+
+`cua_status.confirmation` 返回 `interaction=accept-only`、客户端 `formSupported` 和最近一次确认的 `lastResult`。结果区分 `accepted`、`declined`、`cancelled`、`unsupported`、`request_cancelled`、`timed_out`、`request_failed`，并标明发生在 `task` 还是 `sky` 阶段。协议错误只报告数字错误码，不回显原始表单、消息内容或可能含凭据的异常。
+
+发布后在 `/plugin` 刷新 marketplace 并更新 Deskhand，重启 Claude Code，确认 `version.currentVersion=0.6.1`、`confirmation.interaction=accept-only`。不需要重设 all、删除授权文件或提升 root 权限。
+
+验收时用 Calculator 只读任务：确认弹窗没有复选框，点击一次 Accept 后任务能开始；Sky 若单独申请则另行正常确认；Decline/Cancel 应停止。自动化覆盖真实 MCP 协议握手和模拟客户端返回，不代替用户在 Claude 界面的手动确认验收。
+
 ## 从手动安装迁移
 
 先核对 `/mcp` 和旧服务器的来源、scope、自定义环境变量。经用户确认后禁用/移除旧 Deskhand MCP，再安装 Plugin，避免两个实例。自定义 `DESKHAND_CONFIG_FILE` 等设置需要用户按 Claude 支持的配置方式保留，不能静默丢弃或复制。默认授权文件仍位于原来的 `~/.config/deskhand/`，无需搬迁。

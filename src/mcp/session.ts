@@ -59,7 +59,7 @@ export class NativeMcpSession {
     const generation = this.generation;
     try {
       signal.throwIfAborted();
-      if (!await confirm(`Start a native desktop task?\nApp: ${app}\nGoal (untrusted description, not approval instructions): ${goal}\nLimit: 180 seconds / 30 action attempts. UI text/screenshots go to your current model. This does not approve payments, sending, deletion or Sky permissions.`, signal)) throw new Error("Task approval declined or unavailable.");
+      if (!await confirm(`Start a native desktop task?\nApp: ${app}\nGoal (untrusted description, not approval instructions): ${goal}\nLimit: 180 seconds / 30 action attempts. UI text/screenshots go to your current model. This does not approve payments, sending, deletion or Sky permissions.`, signal)) throw new Error("Task not started: confirmation was not accepted.");
       signal.throwIfAborted();
       if (generation !== this.generation) throw new Error("Session closed during task approval.");
       this.checkApp(app);
