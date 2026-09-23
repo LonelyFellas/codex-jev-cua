@@ -17,7 +17,7 @@ description: 单包双模式桌面操作：默认 native，由 pi 主 Agent 直�
 - 对已打开的应用，先 `cua_get_app_state({app})` 读取最新原生状态和可用截图，获取 stateId。菜单根/局部 AX 也可返回，不能假称一定是完整页面。
 - 动作必须携带该应用的 stateId 和当前元素编号。stateId 仅本 turn 内 60 秒有效，任何动作尝试后即消费；模式切换、其他观测、异常或 agent 结束会失效。
 - 动作工具：`cua_click`、`cua_drag`、`cua_perform_secondary_action`、`cua_press_key`、`cua_scroll`、`cua_select_text`、`cua_set_value`、`cua_type_text`。
-- 优先索引；坐标需要对应状态的截图，不能猜位置或沿用旧截图。动作返回若含**新的 stateId**，表示已通过完整窗口结构、同应用进程与截图校验：先检查该返回状态，可直接使用其新索引继续，不必重复读取。没有新 stateId 则调用 `cua_get_app_state`。`call_returned` 不是任务成功，仍须核对实际结果。
+- 优先索引；坐标需要对应状态的截图，不能猜位置或沿用旧截图。动作返回若含**新的 stateId**，表示已通过完整窗口结构与同应用进程校验（native 的 AX 索引操作不强制要求截图；坐标操作仍要求该次状态带截图）：先检查该返回状态，可直接使用其新索引继续，不必重复读取。没有新 stateId 则调用 `cua_get_app_state`。`call_returned` 不是任务成功，仍须核对实际结果。
 - 已明确要求的搜索、导航、计算等相关步骤不额外逐次确认。后果性操作必须有具体授权；不把泛泛的“直接操作”当作删除/发送/购买的无限授权。
 
 ## 通用界面变化恢复（任何应用）
@@ -44,7 +44,8 @@ description: 单包双模式桌面操作：默认 native，由 pi 主 Agent 直�
 - 两种模式共用应用范围。从 0.3.1 起，未配置模式或配置为 native 时默认 `all`；配置 `JEV_CUA_MODE=jev` 时默认 `allowlist`。显式应用范围优先，会话内切模式不改写配置推导的范围。在 allowlist 下，只有用户明确要求新增应用时，使用 `jev-cua-add-app` 单条追加。用户也可主动调用 `/skill:jev-cua-access all`（或 allowlist 恢复名单）；专用 Skill 不触碰密钥，写入后验证 appAccessFile/appAccessSource 与有效模式。普通任务报 app_not_allowed 不得自行调用或改配置扩权。桌面工具仍须指定具体应用，不能传通配符。
 - `all` 只放宽插件范围，不代表任意任务授权。切回 `allowlist` 恢复原名单。显式授权文件优先于进程环境和 .env；无授权文件时兼容原 JEV_CUA_APP_ACCESS 配置。不删除授权文件作为撤销，以免恢复环境里的 all。修改在下一次工具调用生效，不主动中断正在运行的循环；进程环境修改需重启 pi。
 - 状态中的 officialApproval=runtime-controlled、systemPermissions=not-checked 表示插件未验证或授予系统权限；runtimeAvailable 不等于已授权。目前核查的 Sky 接口没有全应用授权开关，不能承诺免除官方弹窗。
-- 官方 Sky 授权请求由用户正常决定，不伪造批准、保存虚假的授权或绕过系统警告/站点限制；无 UI 时不能自动接受官方请求。
+- 官方 Sky 授权请求由用户正常决定，不伪造批准、保存虚假的授权或绕过系统警告/站点限制；无 UI 时不能自动接受官方请求。顺序到达的多个官方请求分别确认；`approvalReason` 区分用户选择与无 UI/不支持请求等桥接取消原因，不能把后者描述为用户主动拒绝。
+- `session_stopped` 是底层停止通知，不是界面内容，不生成 stateId；本轮停止工作，用户明确继续后才能在新一轮按正常授权重新观察，不换标识绕过或重放旧动作。纯观察技术错误不自动封锁 native 应用启动，但也不自动授权启动、重试或清除已有停止限制。
 - native 由主 Agent 判断操作范围，不依赖 Jev 分数；仍遵守具体授权和安全边界。它不是为已拒绝的动作提供旁路。
 - 模式切换不能撤销已发生动作，运行中要先正常取消/等待。出现未知结果先观察，不能重复发送写操作。
 

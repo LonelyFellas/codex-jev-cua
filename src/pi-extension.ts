@@ -7,7 +7,7 @@ import { runTask } from "./loop.ts";
 import { loadPiConfig } from "./pi-config.ts";
 import { validateAppName } from "./app-grants.ts";
 import { createSkyDriver } from "./sky-driver.ts";
-import { SkyClient, newTurnIdentity } from "./sky/client.ts";
+import { SkyClient, newTurnIdentity, SkyApprovalUnavailableError } from "./sky/client.ts";
 import { resolveSkyRuntime } from "./sky/runtime.ts";
 import { registerNativeTools, nativeToolNames, nativeActionNames } from "./native-tools.ts";
 import { formatNativeResult, newSnapshot, validateNativeAction, canReuseActionState } from "./native-state.ts";
@@ -131,14 +131,24 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
         }
       } };
       return await body(measured, currentTurn(ctx), combined,
-        (message, approvalSignal) => ctx.hasUI ? ctx.ui.confirm("官方 Computer Use 授权", message, { signal: approvalSignal }) : Promise.resolve(false));
+        async (message, approvalSignal) => {
+          if (!ctx.hasUI) throw new SkyApprovalUnavailableError();
+          return ctx.ui.confirm("官方 Computer Use 授权", message, { signal: approvalSignal });
+        });
     } catch (error) {
       snapshot = undefined;
       if (recoveryCall && error instanceof SkyCallError && error.diagnostics.code === "state_changed" && !["declined", "cancelled"].includes(error.diagnostics.approval) && !combined.aborted && budget.status().remainingMs !== 0) {
         recovery ??= { app: recoveryCall.app, failedMethod: recoveryCall.method,
           previousActionOutcome: recoveryCall.readOnly ? "not_applicable" : "unknown" };
       } else {
-        client?.close(); client = undefined; handoff = undefined; recovery = undefined; launchBlocked = true;
+        // A read-only technical failure is not a refusal or an uncertain action.
+        // Keep existing stop/unknown-action restrictions, but do not add a launch
+        // ban merely because an observation timed out or no window was available.
+        const readFailure = mode === "native" && recoveryCall?.readOnly && error instanceof SkyCallError
+          && ["no_windows_available", "transport_error", "timeout"].includes(error.diagnostics.code ?? "")
+          && !["declined", "cancelled"].includes(error.diagnostics.approval) && !combined.aborted;
+        client?.close(); client = undefined; handoff = undefined; recovery = undefined;
+        launchBlocked ||= !readFailure;
       }
       refreshTools();
       throw error;
@@ -238,7 +248,7 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
         const formatStarted = performance.now();
         const result = formatNativeResult(raw);
         budget.beforeDispatch(false);
-        const reused = !spec.readOnly && canReuseActionState(previousSnapshot, result);
+        const reused = !spec.readOnly && canReuseActionState(previousSnapshot, result, selectedMode !== "native");
         if (spec.method === "get_app_state" || reused) {
           snapshot = newSnapshot(appName, requestTurn.turnId, result);
           if (spec.method === "get_app_state") recovery = undefined;

@@ -24,6 +24,7 @@ function harness(limits = { durationMs: 180_000, maxActions: 30 }) {
   const ctx = { hasUI: true, model: { id: "synthetic" }, sessionManager: { getSessionId: () => "test", getBranch: () => [] },
     ui: { confirm: async () => true, notify() {} } } as unknown as ExtensionContext;
   let nextAction = result();
+  let nextObservation = result(observed);
   let actionWaits = false;
   let closed = 0;
   const calls: string[] = [];
@@ -33,6 +34,7 @@ function harness(limits = { durationMs: 180_000, maxActions: 30 }) {
     on: (name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => events.set(name, handler),
   } as unknown as ExtensionAPI;
   registerJevCodexCua(pi, { budgetLimits: limits, config: () => ({ allowedApps: ["Calculator"], envFile: "/unused" }), runtimeCheck() {},
+    launchApp: async () => { calls.push("launch_app"); },
     client: () => ({ close() { closed++; }, async callSky(method, _args, _turn, signal) {
       calls.push(method);
       if (method !== "get_app_state" && actionWaits) {
@@ -41,12 +43,12 @@ function harness(limits = { durationMs: 180_000, maxActions: 30 }) {
           else signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
         });
       }
-      const r = method === "get_app_state" ? result(observed) : nextAction;
+      const r = method === "get_app_state" ? nextObservation : nextAction;
       return { ...r, diagnostics: r.diagnostics ?? diagnostic(method) };
     } }),
   });
   events.get("session_start")!({}, ctx);
-  return { calls, get closed() { return closed; }, setAction(r: SkyResult) { nextAction = r; }, waitAction() { actionWaits = true; },
+  return { calls, get closed() { return closed; }, setObservation(r: SkyResult) { nextObservation = r; }, setAction(r: SkyResult) { nextAction = r; }, waitAction() { actionWaits = true; },
     call: (name: string, args: Record<string, unknown> = {}) => tools.get(name)!.execute("test", args, undefined, undefined, ctx),
     command: () => commands.get("cua-mode")!.handler("native", ctx as ExtensionCommandContext),
     newTurn: () => events.get("agent_start")!({}, ctx) };
@@ -75,6 +77,25 @@ test("partial, cross-process, duplicate, truncated and screenshot-free action st
     result(returned + "\n" + "x".repeat(51000)), { content: [{ type: "text" as const, text: returned }] }]) {
     assert.equal(canReuseActionState(snap, formatNativeResult(r)), false);
   }
+});
+
+test("native reuses a full AX-only action result but still requires a screenshot for coordinates", async () => {
+  const h = harness();
+  const first = await h.call("cua_get_app_state", { app: "Calculator" });
+  h.setAction({ content: [{ type: "text", text: returned }] });
+  const second = await h.call("cua_click", { app: "Calculator", stateId: token(first), element_index: 1 });
+  assert.ok(token(second));
+  const third = await h.call("cua_click", { app: "Calculator", stateId: token(second), element_index: 1 });
+  assert.deepEqual(h.calls, ["get_app_state", "click", "click"]);
+  await assert.rejects(h.call("cua_click", { app: "Calculator", stateId: token(third), x: 10, y: 10 }), /screenshot/);
+});
+
+test("standalone stop notifications are errors, not observations; quoted UI text is not a stop", () => {
+  const stop = "This application session has been explicitly stopped by the user for this turn. Stop your work and send a final message noting they stopped the session and you're ready to continue if they want you to. Computer Use can be used again in the next assistant turn.";
+  assert.throws(() => formatNativeResult({ content: [{ type: "text", text: stop }] }), (e: unknown) => {
+    assert.ok(e instanceof SkyCallError); assert.equal(e.diagnostics.code, "session_stopped"); return true;
+  });
+  assert.doesNotThrow(() => formatNativeResult(result(returned + "\n  3 text " + stop)));
 });
 
 test("RPC success without observation is not task success and does not mint a token", async () => {
@@ -108,6 +129,44 @@ test("state-changed replies and declined approval cannot mint an action token", 
     await assert.rejects(h.call("cua_click", { app: "Calculator", stateId: token(first), element_index: 1 }), /unknown/);
     assert.equal(h.calls.length, 2);
   }
+});
+
+test("native read-only technical failures do not forbid a later explicitly requested launch", async () => {
+  for (const code of ["no_windows_available", "timeout", "transport_error"] as const) {
+    const h = harness();
+    h.setObservation({ isError: true, diagnostics: diagnostic("get_app_state", { code }), content: [] });
+    await assert.rejects(h.call("cua_get_app_state", { app: "Calculator" }));
+    assert.deepEqual(h.calls, ["get_app_state"], "No automatic launch or retry.");
+    assert.equal(((await h.call("cua_status")).details as { launchAvailable: boolean }).launchAvailable, true);
+    await h.call("cua_launch_app", { app: "Calculator", identityType: "name" });
+    assert.deepEqual(h.calls, ["get_app_state", "launch_app"]);
+  }
+});
+
+test("official stop and approval refusal still prevent launch; fresh turns require fresh state", async () => {
+  for (const overrides of [{ code: "session_stopped" }, { approval: "declined" }, { approval: "cancelled" }] as const) {
+    const h = harness();
+    h.setObservation({ content: [], diagnostics: diagnostic("get_app_state", overrides) });
+    await assert.rejects(h.call("cua_get_app_state", { app: "Calculator" }));
+    await h.command();
+    await assert.rejects(h.call("cua_launch_app", { app: "Calculator", identityType: "name" }), /blocked/);
+    assert.deepEqual(h.calls, ["get_app_state"]);
+    h.newTurn();
+    await assert.rejects(h.call("cua_click", { app: "Calculator", element_index: 1 }), /stale/);
+    h.setObservation(result(observed));
+    assert.ok(token(await h.call("cua_get_app_state", { app: "Calculator" })));
+  }
+});
+
+test("an uncertain action still forbids launch even after a technical read failure", async () => {
+  const h = harness(); const first = await h.call("cua_get_app_state", { app: "Calculator" });
+  const error = { content: [], diagnostics: diagnostic("click", { code: "no_windows_available" }) };
+  h.setAction(error);
+  await assert.rejects(h.call("cua_click", { app: "Calculator", stateId: token(first), element_index: 1 }));
+  h.setObservation(error);
+  await assert.rejects(h.call("cua_get_app_state", { app: "Calculator" }));
+  await assert.rejects(h.call("cua_launch_app", { app: "Calculator", identityType: "name" }), /blocked/);
+  assert.deepEqual(h.calls, ["get_app_state", "click", "get_app_state"]);
 });
 
 test("action budget survives mode changes and reconnection; final reads remain allowed", async () => {

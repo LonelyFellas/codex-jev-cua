@@ -24,7 +24,7 @@ export function formatNativeResult(result: SkyResult): { content: SkyContent[]; 
   if (result.isError || code || ["declined", "cancelled"].includes(result.diagnostics?.approval ?? "")) {
     const diagnostic = result.diagnostics ?? { method: "unknown", phase: "response", dispatched: true, rpcOutcome: result.isError ? "tool_error" : "returned",
       approval: "not_requested", code, timings: { bridgeTotalMs: 0, initializeMs: 0, discoveryMs: 0, rpcMs: 0, approvalMs: 0 } };
-    throw new SkyCallError(`Sky rejected the call (${code ?? diagnostic.approval}); approval may have been declined. Action success is unknown; do not bypass or replay automatically.`, diagnostic);
+    throw new SkyCallError(`Sky did not provide usable state (${code ?? diagnostic.approval}; approval reason: ${diagnostic.approvalReason ?? "not_reported"}). ${code === "session_stopped" ? "Sky reports this application session stopped for the current turn. Stop and wait for the user to continue in a new turn. " : ""}Action success is unknown; do not bypass or replay automatically.`, diagnostic);
   }
   const content: SkyContent[] = [{ type: "text", text: limited.content + (limited.truncated ? "\n[Native text truncated; do not invent unseen elements.]" : "") }];
   const image = (result.content ?? []).find((item) => item.type === "image" && typeof item.data === "string"
@@ -45,9 +45,9 @@ function nativeIdentity(text: string): string | undefined {
   const match = wrapped ?? direct;
   return match ? `${match[1]}:${match[2]}` : undefined;
 }
-/** Fail closed for deltas, missing identity, screenshots, or incomplete native window envelopes. */
-export function canReuseActionState(previous: NativeSnapshot | undefined, result: ReturnType<typeof formatNativeResult>): boolean {
-  if (!previous?.nativeIdentity || result.truncated || !result.hasScreenshot || nativeIdentity(result.text) !== previous.nativeIdentity) return false;
+/** Fail closed for deltas, missing identity or incomplete native window envelopes. */
+export function canReuseActionState(previous: NativeSnapshot | undefined, result: ReturnType<typeof formatNativeResult>, requireScreenshot = true): boolean {
+  if (!previous?.nativeIdentity || result.truncated || (requireScreenshot && !result.hasScreenshot) || nativeIdentity(result.text) !== previous.nativeIdentity) return false;
   if (!/^App=[^\n]+\r?\nWindow: [^\n]+\r?\n0 standard window\b/.test(result.text.trim())
     || /\b(diff|delta|partial|unchanged)\b/i.test(result.text)) return false;
   const indexes = [...result.text.matchAll(/^\s*(\d+)\s/gm)].map((m) => Number(m[1]));

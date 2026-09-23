@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SkyClient, newTurnIdentity } from "../src/sky/client.ts";
+import { SkyClient, newTurnIdentity, SkyApprovalUnavailableError } from "../src/sky/client.ts";
 import { SkyCallError } from "../src/sky/diagnostics.ts";
 import { TaskBudget } from "../src/task-budget.ts";
 
@@ -155,6 +155,25 @@ test("server elicitation supports string and numeric IDs and forwards explicit u
     }
   } finally { await s.cleanup(); }
 });
+test("sequential official prompts each require explicit approval", async () => {
+  const s = await setup();
+  try {
+    let asked = 0;
+    const result = await s.client.callSky("approve_twice", {}, turn, undefined, async () => { asked++; return true; });
+    assert.equal(asked, 2);
+    assert.equal(result.diagnostics?.approval, "accepted");
+  } finally { await s.cleanup(); }
+});
+test("a refusal cannot be overwritten by a later prompt in the same call", async () => {
+  const s = await setup();
+  try {
+    let asked = 0;
+    const result = await s.client.callSky("approve_twice", {}, turn, undefined, async () => { asked++; return false; });
+    assert.equal(asked, 1);
+    assert.equal(result.diagnostics?.approval, "declined");
+    assert.equal(result.diagnostics?.approvalReason, "user_declined");
+  } finally { await s.cleanup(); }
+});
 test("no handler, rejected consent and unsupported forms never automatically approve", async () => {
   const s = await setup();
   try {
@@ -162,7 +181,9 @@ test("no handler, rejected consent and unsupported forms never automatically app
     for (const method of ["approve", "unsupported_form"]) {
       const result = await s.client.callSky(method, {}, turn, undefined, method === "approve" ? undefined : async () => { asked++; return true; });
       const item = result.content?.[0];
-      assert.equal(JSON.parse(item?.type === "text" ? item.text : "").approvalReply.action, "decline");
+      assert.equal(JSON.parse(item?.type === "text" ? item.text : "").approvalReply.action, "cancel");
+      assert.equal(result.diagnostics?.approval, "cancelled");
+      assert.equal(result.diagnostics?.approvalReason, method === "approve" ? "handler_unavailable" : "unsupported_request");
     }
     assert.equal(asked, 0);
     const declined = await s.client.callSky("approve", {}, turn, undefined, async () => false);
@@ -171,6 +192,44 @@ test("no handler, rejected consent and unsupported forms never automatically app
     const unknown = await s.client.callSky("unknown_server_method", {}, turn);
     const unknownItem = unknown.content?.[0];
     assert.equal(JSON.parse(unknownItem?.type === "text" ? unknownItem.text : "").error.code, -32601);
+  } finally { await s.cleanup(); }
+});
+test("concurrent prompts cannot overwrite cancellation with a late acceptance", async () => {
+  const s = await setup();
+  try {
+    let asked = 0;
+    const result = await s.client.callSky("approve_concurrent", {}, turn, undefined, async () => {
+      asked++; await new Promise((resolve) => setTimeout(resolve, 50)); return true;
+    });
+    assert.equal(asked, 1);
+    assert.equal(result.diagnostics?.approvalReason, "concurrent_request");
+    assert.equal(result.diagnostics?.approval, "cancelled");
+    const item = result.content?.[0];
+    assert.deepEqual(JSON.parse(item?.type === "text" ? item.text : ""), [{ action: "cancel" }, { action: "cancel" }]);
+  } finally { await s.cleanup(); }
+});
+test("a premature tool result cannot become usable state while approval is pending", async () => {
+  const s = await setup();
+  let finish!: (accepted: boolean) => void;
+  try {
+    const result = await s.client.callSky("approve_early_result", {}, turn, undefined,
+      () => new Promise<boolean>((resolve) => { finish = resolve; }));
+    assert.equal(result.diagnostics?.approval, "cancelled");
+    assert.equal(result.diagnostics?.approvalReason, "incomplete_request");
+    finish(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(result.diagnostics?.approval, "cancelled", "Late consent must not change returned diagnostics.");
+  } finally { finish?.(false); await s.cleanup(); }
+});
+test("unavailable UI and handler errors are not reported as user refusal", async () => {
+  const s = await setup();
+  try {
+    for (const [error, reason] of [[new SkyApprovalUnavailableError(), "handler_unavailable"], [new Error("PRIVATE_UI_ERROR"), "handler_error"]] as const) {
+      const result = await s.client.callSky("approve", {}, turn, undefined, async () => { throw error; });
+      assert.equal(result.diagnostics?.approval, "cancelled");
+      assert.equal(result.diagnostics?.approvalReason, reason);
+      assert.doesNotMatch(JSON.stringify(result.diagnostics), /PRIVATE_UI_ERROR/);
+    }
   } finally { await s.cleanup(); }
 });
 test("human approval time does not consume the network deadline", async () => {
