@@ -24,6 +24,26 @@ Sky MCP 在 get_app_state 前发起 `elicitation/create`，使用**字符串 JSO
 
 类型检查、构建、51 项离线测试通过；测试包括字符串/数字 ID、批准/拒绝/无 handler、未知方法、非空表单、取消和确认等待不消耗网络期限。
 
+## 停止通知与授权误归因修正
+
+后续会话记录出现独立的 `This application session has been explicitly stopped by the user for this turn...` 通知，却被包装成带 `stateId` 的观察结果。现精确识别该独立控制回复为 `session_stopped`，不生成观察 token；AX 页面中引用相同文本不会被当作停止。动作调用遇到停止仍记为结果未知，不重放。
+
+桥接另有两个可离线复现的问题：同一调用中第二个顺序授权请求被直接拒绝；无 UI/不支持的表单被混记为用户拒绝。现做以下区分：
+
+- 每个顺序到达的有效官方确认请求分别交给用户；没有缓存或自动批准。
+- 用户选择拒绝才回复 `decline`；无 handler/UI、处理异常、不支持的请求或并发请求回复 `cancel`。
+- `approvalReason` 记录 `user_accepted`、`user_declined`、`handler_unavailable`、`handler_error`、`unsupported_request`、`concurrent_request`、`incomplete_request` 或 `caller_cancelled`，不记录授权文案或敏感参数。
+- 拒绝/取消在同一调用内保持，后续请求及迟到的确认结果不能覆盖它。授权尚未完成时提前到达的工具结果也不能成为可用观察。
+
+这些是协议夹具与源码证明的问题，**不能据此认定历史停止一定由桥接触发**；仍需真实运行中的脱敏 `approvalReason` 判断。无 UI 时不会自行授予权限。
+
+## Native 限制收窄
+
+- native 可复用同一进程返回的完整、未截断 AX 树，不强制要求同时有截图；坐标操作仍要求该次状态带截图。Jev 接管及 MCP 的原复用条件不变。
+- native 纯观察的 `no_windows_available`、传输错误或单次调用超时，不再额外设置应用启动禁令。不会自动启动或重试；此前的停止/拒绝/未知动作禁令不会因此清除。
+- 官方授权、应用范围、取消、串行调用、单次调用超时、60 秒单次状态 token 和 `state_changed` 重新观察要求仍保留。native 不启用 Jev 总预算或置信度门禁。
+- 未完成官方原生实现的行为对照，因此不宣称已与官方体验完全一致；状态时效、超时和恢复约束不在此次未经验证地移除。
+
 ## 排查历史与纠正
 
 早期只看到 get_app_state 超时，曾检查权限日志、服务进程与不可见的授权弹窗，并在用户允许后重启服务。重启未解决问题；后续证据表明授权发生在 MCP 回调而非服务自己的可见窗口中。不能把 TCC 成功、进程存在或没有窗口等同于应用授权链完整。

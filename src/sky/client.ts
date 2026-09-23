@@ -38,6 +38,9 @@ export function prepareArguments(args: Record<string, unknown>): Record<string, 
   return { ...args, ...(typeof args.element_index === "number" ? { element_index: String(args.element_index) } : {}) };
 }
 export type SkyApprovalHandler = (message: string, signal: AbortSignal) => Promise<boolean>;
+export class SkyApprovalUnavailableError extends Error {
+  constructor() { super("Official approval requires an interactive UI; no user decision was made."); }
+}
 interface Pending { resolve: (result: SkyResult) => void; reject: (error: Error) => void }
 export class SkyClient {
   private child?: ChildProcessWithoutNullStreams;
@@ -52,7 +55,7 @@ export class SkyClient {
   private callSignal?: AbortSignal;
   private pauseDeadline?: () => void;
   private resumeDeadline?: () => void;
-  private approvalRequested = false;
+  private approvalPending = false;
   private diagnostic?: SkyDiagnostics;
   private finishApprovalTiming?: () => void;
   private buffer = "";
@@ -91,7 +94,7 @@ export class SkyClient {
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     this.callSignal = combined;
     this.approvalHandler = approve;
-    this.approvalRequested = false;
+    this.approvalPending = false;
     try {
       if (!this.initialized) await this.start(combined);
       this.phase = "validate_arguments";
@@ -115,6 +118,11 @@ export class SkyClient {
       const rpcStarted = performance.now();
       try {
         const result = await this.request("tools/call", { name: method, arguments: prepared, _meta: requestMeta(turn) }, combined);
+        // A tool reply arriving before its approval completes is not usable state.
+        if (this.approvalPending && !["declined", "cancelled"].includes(diagnostic.approval)) {
+          diagnostic.approval = "cancelled";
+          diagnostic.approvalReason = "incomplete_request";
+        }
         // Never accept diagnostic fields supplied by the remote service.
         diagnostic.rpcOutcome = result.isError ? "tool_error" : "returned";
         const text = (result.content ?? []).filter((c) => c.type === "text").map((c) => c.type === "text" ? c.text : "").join("\n");
@@ -226,12 +234,23 @@ export class SkyClient {
       && (request.mode === undefined || request.mode === "form") && emptyObject;
     const signal = this.callSignal;
     const diagnostic = this.diagnostic;
-    if (!valid || !signal || signal.aborted || !this.approvalHandler || this.approvalRequested) {
-      if (diagnostic) diagnostic.approval = "declined";
-      this.write({ jsonrpc: "2.0", id, result: { action: "decline" } });
+    // Preserve a refusal/cancellation for the entire call. A subsequent request
+    // must not overwrite it, but sequential prompts after acceptance are valid.
+    const stopped = () => diagnostic?.approval === "declined" || diagnostic?.approval === "cancelled";
+    if (stopped()) {
+      this.write({ jsonrpc: "2.0", id, result: { action: "cancel" } });
       return;
     }
-    this.approvalRequested = true;
+    if (!valid || !signal || signal.aborted || !this.approvalHandler || this.approvalPending) {
+      if (diagnostic) {
+        diagnostic.approval = "cancelled";
+        diagnostic.approvalReason = !valid ? "unsupported_request" : !signal || signal.aborted ? "caller_cancelled"
+          : !this.approvalHandler ? "handler_unavailable" : "concurrent_request";
+      }
+      this.write({ jsonrpc: "2.0", id, result: { action: "cancel" } });
+      return;
+    }
+    this.approvalPending = true;
     this.pauseDeadline?.();
     const approvalStarted = performance.now();
     let timingFinished = false;
@@ -242,14 +261,25 @@ export class SkyClient {
     this.finishApprovalTiming = finishTiming;
     try {
       const accepted = await this.approvalHandler(request.message as string, signal);
-      if (diagnostic) diagnostic.approval = signal.aborted ? "cancelled" : accepted === true ? "accepted" : "declined";
-      this.write({ jsonrpc: "2.0", id, result: signal.aborted ? { action: "cancel" } : accepted === true ? { action: "accept", content: {} } : { action: "decline" } });
-    } catch {
-      if (diagnostic) diagnostic.approval = "cancelled";
+      const cancelled = signal.aborted || this.callSignal !== signal || this.closed || stopped();
+      if (diagnostic && !stopped()) {
+        diagnostic.approval = cancelled ? "cancelled" : accepted === true ? "accepted" : "declined";
+        diagnostic.approvalReason = cancelled ? "caller_cancelled" : accepted === true ? "user_accepted" : "user_declined";
+      }
+      this.write({ jsonrpc: "2.0", id, result: cancelled ? { action: "cancel" } : accepted === true ? { action: "accept", content: {} } : { action: "decline" } });
+    } catch (error) {
+      if (diagnostic && !stopped()) {
+        diagnostic.approval = "cancelled";
+        diagnostic.approvalReason = signal.aborted ? "caller_cancelled"
+          : error instanceof SkyApprovalUnavailableError ? "handler_unavailable" : "handler_error";
+      }
       this.write({ jsonrpc: "2.0", id, result: { action: "cancel" } });
     } finally {
       finishTiming();
-      this.resumeDeadline?.();
+      if (this.callSignal === signal) {
+        this.approvalPending = false;
+        this.resumeDeadline?.();
+      }
     }
   }
 

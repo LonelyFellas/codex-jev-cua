@@ -302,7 +302,7 @@ test("Jev high-risk confirmation never enables a native fallback", async (t) => 
 test("official approval is preserved in native mode; headless/declined approval is not faked", async () => {
   for (const options of [{ hasUI: true, approved: false }, { hasUI: false, approved: true }]) {
     const h = setup({ ...options, nativeApproval: true });
-    await assert.rejects(h.call("cua_get_app_state", { app: "Calculator" }), /declined/);
+    await assert.rejects(h.call("cua_get_app_state", { app: "Calculator" }), options.hasUI ? /sky_tool_error/ : /interactive UI/);
     assert.equal(h.closed, 1);
     assert.equal(h.approvals, options.hasUI ? 1 : 0);
   }
@@ -396,7 +396,7 @@ test("all-app access never fakes official approval in either mode", async () => 
         config: { mode, apiKey: "synthetic", appAccess: "all", allowedApps: [], envFile: "/unused" } });
       await assert.rejects(mode === "native"
         ? h.call("cua_get_app_state", { app: "Mail" })
-        : h.call("jev_cua_run", { appName: "Mail", goal: "Inspect", maxSteps: 1 }), /declined|failed/);
+        : h.call("jev_cua_run", { appName: "Mail", goal: "Inspect", maxSteps: 1 }), mode === "jev" ? /failed/ : options.hasUI ? /sky_tool_error/ : /interactive UI/);
       assert.deepEqual(h.calls.map((c) => c.method), ["get_app_state"]);
       assert.equal(h.closed, 1);
       assert.equal(h.approvals, options.hasUI ? 1 : 0);

@@ -127,8 +127,8 @@ test("only actual native app approval asks the user; denial and headless mode ne
   const h = harness(true, true, true);
   await h.call("jev_cua_observe", { appName: "Calculator" });
   assert.equal(h.prompts, 1, "Only the official native request should show a dialog.");
-  for (const denied of [harness(false, true, true), harness(true, false, true)]) {
-    await assert.rejects(denied.call("jev_cua_observe", { appName: "Calculator" }), /Sky rejected/);
+  for (const [denied, expected] of [[harness(false, true, true), /sky_tool_error/], [harness(true, false, true), /interactive UI/]] as const) {
+    await assert.rejects(denied.call("jev_cua_observe", { appName: "Calculator" }), expected);
     assert.deepEqual(denied.calls, ["get_app_state"]);
   }
 });
