@@ -15,7 +15,7 @@
 
 **0.5.0 起，Claude MCP 全新安装默认 `all`（全应用），已有显式白名单不变；已发布 0.4.0 仍是旧默认。** [完整安装指南](docs/claude-native/README.md)包含 MCP 安装、Skill 安装、全应用权限开启与验证步骤，系统/Sky 权限仍需用户批准。
 
-Claude 专用权限 Skill（0.5.0 起，发布状态以 npm registry 为准）支持 `/deskhand-access add WeChat`、`/deskhand-access all` 和 `/deskhand-access allowlist`。需单独显式安装，并更新 MCP；见[Skill 安装与权限流程](docs/claude-native/README.md#通过-skill-管理应用权限)。不会修改 pi 权限或绕过系统授权。
+**0.6.0 起推荐 [Claude Plugin 统一安装](docs/claude-plugin/README.md)**：在 `/plugin` 添加 `LonelyFellas/jev-codex-cua` marketplace，安装 `deskhand@deskhand`，MCP 与 `/deskhand:deskhand-access` Skill 一起升级，无需分别安装。`cua_status` 默认离线报告当前版本；显式传入 `checkUpdates: true` 才检查最新版本并提供 Plugin 升级方式，不自动修改配置或权限。实际可用性取决于 npm 发布，Claude Plugin 实机验收尚未完成。旧版手动安装仍兼容，迁移方式见上述指南。
 
 ## 安装
 
