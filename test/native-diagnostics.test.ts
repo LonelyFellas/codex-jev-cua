@@ -27,6 +27,7 @@ function harness(limits = { durationMs: 180_000, maxActions: 30 }) {
   let nextObservation = result(observed);
   let actionWaits = false;
   let closed = 0;
+  let created = 0;
   const calls: string[] = [];
   const pi = { registerTool(t: ToolDefinition) { tools.set(t.name, t); active.push(t.name); },
     registerCommand(name: string, c: { handler(args: string, ctx: ExtensionCommandContext): Promise<void> }) { commands.set(name, c); },
@@ -35,7 +36,7 @@ function harness(limits = { durationMs: 180_000, maxActions: 30 }) {
   } as unknown as ExtensionAPI;
   registerJevCodexCua(pi, { budgetLimits: limits, config: () => ({ allowedApps: ["Calculator"], envFile: "/unused" }), runtimeCheck() {},
     launchApp: async () => { calls.push("launch_app"); },
-    client: () => ({ close() { closed++; }, async callSky(method, _args, _turn, signal) {
+    client: () => { created++; return { close() { closed++; }, async callSky(method, _args, _turn, signal) {
       calls.push(method);
       if (method !== "get_app_state" && actionWaits) {
         await new Promise((_resolve, reject) => {
@@ -45,15 +46,51 @@ function harness(limits = { durationMs: 180_000, maxActions: 30 }) {
       }
       const r = method === "get_app_state" ? nextObservation : nextAction;
       return { ...r, diagnostics: r.diagnostics ?? diagnostic(method) };
-    } }),
+    } }; },
   });
   events.get("session_start")!({}, ctx);
-  return { calls, get closed() { return closed; }, setObservation(r: SkyResult) { nextObservation = r; }, setAction(r: SkyResult) { nextAction = r; }, waitAction() { actionWaits = true; },
+  return { calls, get closed() { return closed; }, get created() { return created; }, setObservation(r: SkyResult) { nextObservation = r; }, setAction(r: SkyResult) { nextAction = r; }, waitAction() { actionWaits = true; },
     call: (name: string, args: Record<string, unknown> = {}) => tools.get(name)!.execute("test", args, undefined, undefined, ctx),
     command: () => commands.get("cua-mode")!.handler("native", ctx as ExtensionCommandContext),
-    newTurn: () => events.get("agent_start")!({}, ctx) };
+    newTurn: () => events.get("agent_start")!({}, ctx),
+    endTurn: () => events.get("agent_end")!({}, ctx),
+    shutdown: () => events.get("session_shutdown")!({}, ctx) };
 }
 const token = (r: { details?: unknown }) => (r.details as { stateId?: string }).stateId;
+
+test("task completion closes Sky; the next task reconnects lazily with fresh state", async () => {
+  const h = harness(); h.newTurn();
+  const first = await h.call("cua_get_app_state", { app: "Calculator" });
+  await h.call("cua_click", { app: "Calculator", stateId: token(first), element_index: 1 });
+  assert.equal(h.created, 1, "Keep one connection within a task.");
+  h.endTurn();
+  assert.equal(h.closed, 1, "Release the desktop bridge when the task ends.");
+  h.endTurn();
+  assert.equal(h.closed, 1, "Cleanup is idempotent.");
+  h.newTurn();
+  assert.equal(h.created, 1, "Do not reconnect until explicitly called.");
+  await assert.rejects(h.call("cua_click", { app: "Calculator", stateId: token(first), element_index: 1 }), /stale/);
+  const fresh = await h.call("cua_get_app_state", { app: "Calculator" });
+  assert.ok(token(fresh)); assert.notEqual(token(fresh), token(first));
+  assert.equal(h.created, 2);
+  assert.deepEqual(h.calls, ["get_app_state", "click", "get_app_state"]);
+  h.endTurn(); h.shutdown();
+  assert.equal(h.closed, 2);
+});
+
+test("ending a task cancels an in-flight call and releases the connection without replay", async () => {
+  const h = harness({ durationMs: 500, maxActions: 30 }); h.newTurn();
+  const first = await h.call("cua_get_app_state", { app: "Calculator" });
+  h.waitAction();
+  const pending = h.call("cua_click", { app: "Calculator", stateId: token(first), element_index: 1 });
+  const rejected = assert.rejects(pending);
+  h.endTurn();
+  const closedAtEnd = h.closed;
+  await rejected;
+  assert.equal(closedAtEnd, 1);
+  assert.equal(h.closed, 1);
+  assert.deepEqual(h.calls, ["get_app_state", "click"]);
+});
 
 test("validated returned state allows consecutive actions without an extra observation", async () => {
   const h = harness();

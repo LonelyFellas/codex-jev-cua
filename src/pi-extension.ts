@@ -362,7 +362,10 @@ export function registerJevCodexCua(pi: ExtensionAPI, deps: ExtensionDependencie
     turn = newTurnIdentity(ctx.sessionManager.getSessionId(), ctx.model?.id ?? "unknown", ctx.thinkingLevel);
     snapshot = undefined; handoff = undefined; refreshTools();
   });
-  pi.on("agent_end", () => { turn = undefined; snapshot = undefined; handoff = undefined; refreshTools(); });
+  // A completed/aborted task must not leave the desktop bridge (and its cursor)
+  // attached until Pi exits. The next task connects lazily through withConnection,
+  // with normal official approval and no automatic replay or identity rotation.
+  pi.on("agent_end", () => { dispose(); refreshTools(); });
   pi.on("session_shutdown", () => { dispose(); });
 }
 export default function jevCodexCua(pi: ExtensionAPI): void { registerJevCodexCua(pi); }
